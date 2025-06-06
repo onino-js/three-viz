@@ -67,10 +67,22 @@ class GalaxyMap {
 
   async loadData() {
     try {
-      const response = await fetch("./processed-data.json");
-      const data = await response.json();
-      console.log("Data loaded:", data);
-      this.createPlanets(data.data);
+      const response = await fetch("data.csv");
+      const csvText = await response.text();
+
+      const results = Papa.parse(csvText, {
+        header: true,
+        skipEmptyLines: true,
+        dynamicTyping: true,
+      });
+
+      if (!results.data || !Array.isArray(results.data)) {
+        console.error("CSV parsing failed:", results);
+        throw new Error("Failed to parse CSV data");
+      }
+
+      console.log("Data loaded:", results.data);
+      this.createPlanets(results.data);
     } catch (error) {
       console.error("Error loading data:", error);
     }

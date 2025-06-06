@@ -380,20 +380,32 @@ class PlanetVisualizer {
   async loadData() {
     try {
       console.log("Loading data...");
-      const response = await fetch("processed-data.json");
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const jsonData = await response.json();
-      console.log("Data loaded:", jsonData);
 
-      // Vérifier si les données sont dans le format attendu
-      if (!jsonData.data || !Array.isArray(jsonData.data)) {
-        console.error("Data is not in the expected format:", jsonData);
-        throw new Error("Data must contain an array in the 'data' property");
+      // Add Papa Parse CDN script dynamically
+      //   await new Promise((resolve, reject) => {
+      //     const script = document.createElement('script');
+      //     script.src = "https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js";
+      //     script.onload = resolve;
+      //     script.onerror = reject;
+      //     document.head.appendChild(script);
+      //   });
+
+      // Load and parse CSV data
+      const response = await fetch("data.csv");
+      const csvText = await response.text();
+
+      const results = Papa.parse(csvText, {
+        header: true,
+        skipEmptyLines: true,
+        dynamicTyping: true,
+      });
+
+      if (!results.data || !Array.isArray(results.data)) {
+        console.error("CSV parsing failed:", results);
+        throw new Error("Failed to parse CSV data");
       }
 
-      this.data = jsonData.data.filter((planet, i) => i <= 2000);
+      this.data = results.data.filter((planet, i) => i <= 2000);
       console.log("Number of planets:", this.data.length);
 
       // Calculate max values for normalization
