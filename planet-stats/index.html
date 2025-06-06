@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Galactic Exoplanet Map</title>
+
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- OrbitControls for camera manipulation -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #000;
+        font-family: Arial, sans-serif;
+      }
+
+      #info {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        color: white;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 20px;
+        border-radius: 10px;
+        max-width: 300px;
+      }
+
+      #controls {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.7);
+        padding: 15px;
+        border-radius: 10px;
+        color: white;
+        display: flex;
+        gap: 10px;
+      }
+
+      .control-button {
+        background: #2196f3;
+        border: none;
+        color: white;
+        padding: 8px 15px;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: background 0.3s;
+      }
+
+      .control-button:hover {
+        background: #1976d2;
+      }
+
+      #timeline {
+        width: 300px;
+        margin: 0 10px;
+      }
+
+      #year-display {
+        text-align: center;
+        margin-top: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="info">
+      <h2>Galactic Exoplanet Map</h2>
+      <p>
+        Explore the known exoplanets in our galaxy. Each point represents a
+        planet, with:
+      </p>
+      <ul>
+        <li>Position: Based on RA, Dec, and distance</li>
+        <li>Size: Based on planet radius (Jupiter units)</li>
+        <li>Color: Based on equilibrium temperature</li>
+      </ul>
+    </div>
+
+    <div id="controls">
+      <button class="control-button" id="play-pause">Play/Pause</button>
+      <input
+        type="range"
+        id="timeline"
+        min="1992"
+        max="2024"
+        value="1992"
+        step="1"
+      />
+      <span id="year-display">1992</span>
+      <button class="control-button" id="reset">Reset</button>
+    </div>
+
+    <script src="./js/galaxy-map.js"></script>
+  </body>
+</html>

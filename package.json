@@ -1,0 +1,12 @@
+{
+  "name": "planet-stats",
+  "version": "1.0.0",
+  "description": "Planet statistics visualization project",
+  "main": "data-processor.js",
+  "scripts": {
+    "process": "node data-processor.js"
+  },
+  "dependencies": {
+    "csv-parse": "^5.5.3"
+  }
+} 

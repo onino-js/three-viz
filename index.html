@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Three.js Data Visualization Projects</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+        color: white;
+        min-height: 100vh;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+
+      header {
+        text-align: center;
+        margin-bottom: 4rem;
+      }
+
+      h1 {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        background: linear-gradient(45deg, #00ff87, #60efff);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-shadow: 0 0 20px rgba(0, 255, 135, 0.3);
+      }
+
+      .subtitle {
+        font-size: 1.2rem;
+        color: #888;
+        margin-bottom: 2rem;
+      }
+
+      .projects-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 2rem;
+        padding: 1rem;
+      }
+
+      .project-card {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 15px;
+        padding: 2rem;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        cursor: pointer;
+        text-decoration: none;
+        color: white;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .project-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+          45deg,
+          transparent,
+          rgba(255, 255, 255, 0.1),
+          transparent
+        );
+        transform: translateX(-100%);
+        transition: transform 0.6s ease;
+      }
+
+      .project-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+      }
+
+      .project-card:hover::before {
+        transform: translateX(100%);
+      }
+
+      .project-card h2 {
+        font-size: 1.8rem;
+        margin-bottom: 1rem;
+        color: #00ff87;
+      }
+
+      .project-card p {
+        color: #aaa;
+        line-height: 1.6;
+        margin-bottom: 1.5rem;
+      }
+
+      .project-card .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+
+      .project-card .tag {
+        background: rgba(0, 255, 135, 0.1);
+        color: #00ff87;
+        padding: 0.3rem 0.8rem;
+        border-radius: 20px;
+        font-size: 0.9rem;
+      }
+
+      .coming-soon {
+        opacity: 0.7;
+        cursor: not-allowed;
+      }
+
+      .coming-soon::after {
+        content: "Coming Soon";
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        background: rgba(255, 255, 255, 0.1);
+        padding: 0.3rem 0.8rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Three.js Data Visualization</h1>
+        <p class="subtitle">
+          A collection of interactive 3D data visualization projects
+        </p>
+      </header>
+
+      <div class="projects-grid">
+        <a href="./music-visualizer/" class="project-card">
+          <h2>Music Visualizer</h2>
+          <p>
+            Experience your music in 3D space with this dynamic audio frequency
+            visualization. Watch as sound waves transform into a mesmerizing
+            visual landscape.
+          </p>
+          <div class="tags">
+            <span class="tag">Three.js</span>
+            <span class="tag">Web Audio API</span>
+            <span class="tag">3D Visualization</span>
+          </div>
+        </a>
+
+        <a href="./planet-stats/" class="project-card">
+          <h2>Galactic Exoplanet Map</h2>
+          <p>
+            Explore the known exoplanets in our galaxy through an interactive 3D
+            map. Watch as new discoveries appear over time, with planet
+            properties visualized through size and color.
+          </p>
+          <div class="tags">
+            <span class="tag">Three.js</span>
+            <span class="tag">Space Data</span>
+            <span class="tag">Time Series</span>
+          </div>
+        </a>
+
+        <a href="./planet-uncertainty/" class="project-card">
+          <h2>Planetary Uncertainty Visualization</h2>
+          <p>
+            Explore the uncertainties in exoplanet measurements through an
+            interactive 3D visualization. See how measurement errors affect our
+            understanding of planetary properties through ellipsoids and
+            uncertainty lines.
+          </p>
+          <div class="tags">
+            <span class="tag">Three.js</span>
+            <span class="tag">Data Visualization</span>
+            <span class="tag">Uncertainty</span>
+          </div>
+        </a>
+
+        <div class="project-card coming-soon">
+          <h2>Time Series Explorer</h2>
+          <p>
+            Journey through time-series data in a 3D environment. Analyze trends
+            and patterns across multiple dimensions with this immersive
+            visualization.
+          </p>
+          <div class="tags">
+            <span class="tag">Three.js</span>
+            <span class="tag">Time Series</span>
+            <span class="tag">Data Analysis</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
