@@ -29,7 +29,9 @@ class GalaxyMap {
     document.body.appendChild(this.renderer.domElement);
 
     // Configuration de la caméra
-    this.camera.position.z = 10;
+    this.camera.position.z = 5;
+    this.camera.position.y = 5;
+    this.camera.position.x = 5;
 
     // Contrôles de la caméra
     this.controls = new THREE.OrbitControls(

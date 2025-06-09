@@ -405,15 +405,27 @@ class PlanetVisualizer {
         throw new Error("Failed to parse CSV data");
       }
 
-      this.data = results.data.filter((planet, i) => i <= 2000);
+      this.data = results.data
+        .filter(
+          (planet, i) =>
+            !!planet.pl_orbper && !!planet.pl_rade && !!planet.pl_bmasse
+        )
+        .filter(
+          (planet, i) =>
+            !!planet.pl_bmasseerr1 &&
+            !!planet.pl_orbpererr1 &&
+            !!planet.pl_radeerr1
+        )
+        .filter((planet, i) => planet.pl_orbper <= 100);
       console.log("Number of planets:", this.data.length);
 
       // Calculate max values for normalization
       this.data.forEach((planet) => {
-        this.maxValues.orbitalPeriod = Math.max(
-          this.maxValues.orbitalPeriod,
-          planet.pl_orbper || 0
-        );
+        // this.maxValues.orbitalPeriod = Math.max(
+        //   this.maxValues.orbitalPeriod,
+        //   planet.pl_orbper || 0
+        // );
+        this.maxValues.orbitalPeriod = 100;
         this.maxValues.radius = Math.max(
           this.maxValues.radius,
           planet.pl_rade || 0
