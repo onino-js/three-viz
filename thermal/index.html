@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulation de Diffusion de Chaleur 2D</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .simulation-container {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+        canvas {
+            border: 2px solid #444;
+            border-radius: 8px;
+            background: black;
+        }
+        .controls {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            min-width: 250px;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        input[type="range"] {
+            width: 100%;
+            margin-bottom: 5px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button.reset {
+            background: #f44336;
+        }
+        button.reset:hover {
+            background: #da190b;
+        }
+        .info {
+            background: #333;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        .legend {
+            margin-top: 15px;
+        }
+        .color-bar {
+            width: 100%;
+            height: 20px;
+            background: linear-gradient(to right, 
+                #000080, #0000ff, #00ffff, #00ff00, 
+                #ffff00, #ff8000, #ff0000, #800000);
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .temp-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Simulation de Diffusion de Chaleur en 2D</h1>
+            <p>Équation de la chaleur avec conditions aux limites : température chaude (bas), froide (haut), parois adiabatiques (côtés)</p>
+        </div>
+        
+        <div class="simulation-container">
+            <canvas id="heatCanvas" width="600" height="600"></canvas>
+            
+            <div class="controls">
+                <div class="control-group">
+                    <label>Diffusivité thermique: <span id="diffusivityValue">0.1</span></label>
+                    <input type="range" id="diffusivity" min="0.01" max="0.3" step="0.01" value="0.1">
+                </div>
+                
+                <div class="control-group">
+                    <label>Température chaude (bas): <span id="hotTempValue">100</span>°C</label>
+                    <input type="range" id="hotTemp" min="50" max="150" step="5" value="100">
+                </div>
+                
+                <div class="control-group">
+                    <label>Température froide (haut): <span id="coldTempValue">0</span>°C</label>
+                    <input type="range" id="coldTemp" min="-20" max="50" step="5" value="0">
+                </div>
+                
+                <div class="control-group">
+                    <label>Vitesse de simulation: <span id="speedValue">1.0</span></label>
+                    <input type="range" id="speed" min="0.1" max="3.0" step="0.1" value="1.0">
+                </div>
+                
+                <button id="playPause">⏸️ Pause</button>
+                <button id="reset" class="reset">🔄 Reset</button>
+                
+                <div class="legend">
+                    <h3>Légende des couleurs</h3>
+                    <div class="color-bar"></div>
+                    <div class="temp-labels">
+                        <span>Froid</span>
+                        <span>Chaud</span>
+                    </div>
+                </div>
+                
+                <div class="info">
+                    <h3>Informations</h3>
+                    <p><strong>Temps:</strong> <span id="timeDisplay">0.00</span>s</p>
+                    <p><strong>Itérations:</strong> <span id="iterDisplay">0</span></p>
+                    <p><strong>FPS:</strong> <span id="fpsDisplay">--</span></p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="info">
+            <h3>À propos de la simulation</h3>
+            <p>Cette simulation résout l'équation de diffusion de la chaleur en 2D : ∂u/∂t = α∇²u</p>
+            <p><strong>Conditions aux limites :</strong></p>
+            <ul>
+                <li>Paroi inférieure : température fixe (chaude)</li>
+                <li>Paroi supérieure : température fixe (froide)</li>
+                <li>Parois latérales : adiabatiques (∂u/∂n = 0)</li>
+            </ul>
+            <p>La méthode utilisée est un schéma aux différences finies explicite optimisé pour le canvas 2D.</p>
+        </div>
+    </div>
+
+    <script>
+        class HeatDiffusionSimulation {
+            constructor() {
+                this.canvas = document.getElementById('heatCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                
+                this.width = 200;
+                this.height = 200;
+                this.dt = 0.001;
+                this.dx = 1.0 / this.width;
+                this.dy = 1.0 / this.height;
+                
+                this.diffusivity = 0.1;
+                this.hotTemp = 100;
+                this.coldTemp = 0;
+                this.speed = 1.0;
+                this.isRunning = true;
+                
+                this.time = 0;
+                this.iterations = 0;
+                this.fps = 0;
+                this.fpsCounter = 0;
+                this.fpsTime = 0;
+                
+                // Grilles de température (ping-pong)
+                this.grid1 = new Array(this.height);
+                this.grid2 = new Array(this.height);
+                this.currentGrid = 0;
+                
+                for (let i = 0; i < this.height; i++) {
+                    this.grid1[i] = new Array(this.width);
+                    this.grid2[i] = new Array(this.width);
+                }
+                
+                // ImageData pour le rendu
+                this.imageData = this.ctx.createImageData(this.canvas.width, this.canvas.height);
+                
+                this.initControls();
+                this.reset();
+                this.animate();
+            }
+            
+            initControls() {
+                // Sliders
+                document.getElementById('diffusivity').addEventListener('input', (e) => {
+                    this.diffusivity = parseFloat(e.target.value);
+                    document.getElementById('diffusivityValue').textContent = this.diffusivity.toFixed(2);
+                });
+                
+                document.getElementById('hotTemp').addEventListener('input', (e) => {
+                    this.hotTemp = parseFloat(e.target.value);
+                    document.getElementById('hotTempValue').textContent = this.hotTemp.toFixed(0);
+                });
+                
+                document.getElementById('coldTemp').addEventListener('input', (e) => {
+                    this.coldTemp = parseFloat(e.target.value);
+                    document.getElementById('coldTempValue').textContent = this.coldTemp.toFixed(0);
+                });
+                
+                document.getElementById('speed').addEventListener('input', (e) => {
+                    this.speed = parseFloat(e.target.value);
+                    document.getElementById('speedValue').textContent = this.speed.toFixed(1);
+                });
+                
+                // Boutons
+                document.getElementById('playPause').addEventListener('click', () => {
+                    this.isRunning = !this.isRunning;
+                    document.getElementById('playPause').textContent = this.isRunning ? '⏸️ Pause' : '▶️ Play';
+                });
+                
+                document.getElementById('reset').addEventListener('click', () => {
+                    this.reset();
+                });
+            }
+            
+            reset() {
+                // Initialiser avec un gradient linéaire de bas en haut
+                for (let j = 0; j < this.height; j++) {
+                    for (let i = 0; i < this.width; i++) {
+                        // j=0 est en bas (chaud), j=height-1 est en haut (froid)
+                        const ratio = j / (this.height - 1);
+                        const temp = this.hotTemp * (1 - ratio) + this.coldTemp * ratio;
+                        
+                        this.grid1[j][i] = temp;
+                        this.grid2[j][i] = temp;
+                    }
+                }
+                
+                this.time = 0;
+                this.iterations = 0;
+                this.currentGrid = 0;
+                this.updateDisplay();
+            }
+            
+            step() {
+                if (!this.isRunning) return;
+                
+                const currentData = this.currentGrid === 0 ? this.grid1 : this.grid2;
+                const nextData = this.currentGrid === 0 ? this.grid2 : this.grid1;
+                
+                // Coefficient de stabilité (critère CFL)
+                const r = this.diffusivity * this.dt / (this.dx * this.dx);
+                
+                // Assurer la stabilité numérique
+                if (r > 0.25) {
+                    this.dt = 0.25 * this.dx * this.dx / this.diffusivity;
+                }
+                
+                for (let j = 0; j < this.height; j++) {
+                    for (let i = 0; i < this.width; i++) {
+                        // Conditions aux limites
+                        if (j === 0) {
+                            // Paroi inférieure : température fixe chaude
+                            nextData[j][i] = this.hotTemp;
+                        } else if (j === this.height - 1) {
+                            // Paroi supérieure : température fixe froide
+                            nextData[j][i] = this.coldTemp;
+                        } else {
+                            // Points intérieurs : équation de diffusion
+                            const current = currentData[j][i];
+                            
+                            // Voisins avec conditions adiabatiques sur les côtés
+                            const left = i > 0 ? currentData[j][i-1] : current;
+                            const right = i < this.width - 1 ? currentData[j][i+1] : current;
+                            const up = currentData[j+1][i];
+                            const down = currentData[j-1][i];
+                            
+                            // Laplacien discret
+                            const laplacian = (left + right + up + down - 4 * current) / (this.dx * this.dx);
+                            
+                            // Mise à jour temporelle (schéma d'Euler explicite)
+                            nextData[j][i] = current + this.dt * this.diffusivity * laplacian * this.speed;
+                        }
+                    }
+                }
+                
+                // Échanger les grilles
+                this.currentGrid = 1 - this.currentGrid;
+                this.time += this.dt * this.speed;
+                this.iterations++;
+            }
+            
+            render() {
+                const currentData = this.currentGrid === 0 ? this.grid1 : this.grid2;
+                const pixelData = this.imageData.data;
+                
+                // Trouver min/max pour la normalisation
+                let minTemp = Infinity;
+                let maxTemp = -Infinity;
+                
+                for (let j = 0; j < this.height; j++) {
+                    for (let i = 0; i < this.width; i++) {
+                        const temp = currentData[j][i];
+                        minTemp = Math.min(minTemp, temp);
+                        maxTemp = Math.max(maxTemp, temp);
+                    }
+                }
+                
+                // Éviter la division par zéro
+                if (maxTemp - minTemp < 0.01) {
+                    maxTemp = minTemp + 0.01;
+                }
+                
+                // Remplir les pixels
+                const scaleX = this.canvas.width / this.width;
+                const scaleY = this.canvas.height / this.height;
+                
+                for (let canvasY = 0; canvasY < this.canvas.height; canvasY++) {
+                    for (let canvasX = 0; canvasX < this.canvas.width; canvasX++) {
+                        // Mapper les coordonnées canvas vers la grille
+                        const gridX = Math.floor(canvasX / scaleX);
+                        const gridY = Math.floor((this.canvas.height - 1 - canvasY) / scaleY); // Inverser Y
+                        
+                        const temp = currentData[Math.min(gridY, this.height - 1)][Math.min(gridX, this.width - 1)];
+                        const normalizedTemp = (temp - minTemp) / (maxTemp - minTemp);
+                        
+                        const color = this.temperatureToColor(normalizedTemp);
+                        const pixelIndex = (canvasY * this.canvas.width + canvasX) * 4;
+                        
+                        pixelData[pixelIndex] = color[0];     // R
+                        pixelData[pixelIndex + 1] = color[1]; // G
+                        pixelData[pixelIndex + 2] = color[2]; // B
+                        pixelData[pixelIndex + 3] = 255;      // A
+                    }
+                }
+                
+                this.ctx.putImageData(this.imageData, 0, 0);
+            }
+            
+            temperatureToColor(t) {
+                // Assurer que t est entre 0 et 1
+                t = Math.max(0, Math.min(1, t));
+                
+                let r, g, b;
+                
+                if (t < 0.125) {
+                    // Bleu foncé vers bleu
+                    const ratio = t * 8;
+                    r = 0;
+                    g = 0;
+                    b = Math.floor(128 + 127 * ratio);
+                } else if (t < 0.375) {
+                    // Bleu vers cyan
+                    const ratio = (t - 0.125) * 4;
+                    r = 0;
+                    g = Math.floor(255 * ratio);
+                    b = 255;
+                } else if (t < 0.625) {
+                    // Cyan vers vert
+                    const ratio = (t - 0.375) * 4;
+                    r = 0;
+                    g = 255;
+                    b = Math.floor(255 * (1 - ratio));
+                } else if (t < 0.875) {
+                    // Vert vers jaune
+                    const ratio = (t - 0.625) * 4;
+                    r = Math.floor(255 * ratio);
+                    g = 255;
+                    b = 0;
+                } else {
+                    // Jaune vers rouge
+                    const ratio = (t - 0.875) * 8;
+                    r = 255;
+                    g = Math.floor(255 * (1 - ratio));
+                    b = 0;
+                }
+                
+                return [r, g, b];
+            }
+            
+            updateDisplay() {
+                document.getElementById('timeDisplay').textContent = this.time.toFixed(2);
+                document.getElementById('iterDisplay').textContent = this.iterations;
+                document.getElementById('fpsDisplay').textContent = this.fps.toFixed(0);
+            }
+            
+            animate(currentTime = 0) {
+                // Calcul FPS
+                if (currentTime - this.fpsTime > 1000) {
+                    this.fps = this.fpsCounter;
+                    this.fpsCounter = 0;
+                    this.fpsTime = currentTime;
+                }
+                this.fpsCounter++;
+                
+                // Simulation - plusieurs étapes par frame pour accélérer
+                const stepsPerFrame = Math.max(1, Math.floor(this.speed * 3));
+                for (let i = 0; i < stepsPerFrame; i++) {
+                    this.step();
+                }
+                
+                this.render();
+                this.updateDisplay();
+                
+                requestAnimationFrame((t) => this.animate(t));
+            }
+        }
+        
+        // Démarrer la simulation
+        window.addEventListener('load', () => {
+            new HeatDiffusionSimulation();
+        });
+    </script>
+</body>
+</html>

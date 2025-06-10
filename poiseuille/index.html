@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simulation d'Écoulement de Poiseuille</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background: linear-gradient(135deg, #1e3c72, #2a5298);
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        overflow: hidden;
+      }
+
+      #container {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      #controls {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        z-index: 100;
+        background: rgba(0, 0, 0, 0.8);
+        padding: 20px;
+        border-radius: 10px;
+        color: white;
+        backdrop-filter: blur(10px);
+      }
+
+      .control-group {
+        margin-bottom: 15px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 14px;
+      }
+
+      input[type="range"] {
+        width: 200px;
+        margin-bottom: 5px;
+      }
+
+      .value-display {
+        font-size: 12px;
+        color: #aaa;
+      }
+
+      #info {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        z-index: 100;
+        background: rgba(0, 0, 0, 0.8);
+        padding: 15px;
+        border-radius: 10px;
+        color: white;
+        font-size: 12px;
+        backdrop-filter: blur(10px);
+      }
+
+      button {
+        background: #4caf50;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-right: 10px;
+      }
+
+      button:hover {
+        background: #45a049;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="container">
+      <div id="controls">
+        <h3>Paramètres de l'écoulement</h3>
+        <div class="control-group">
+          <label>Débit (Reynolds): <span id="flowRate">50</span></label>
+          <input
+            type="range"
+            id="flowRateSlider"
+            min="10"
+            max="200"
+            value="50"
+          />
+        </div>
+        <div class="control-group">
+          <label>Viscosité: <span id="viscosity">1.0</span></label>
+          <input
+            type="range"
+            id="viscositySlider"
+            min="0.1"
+            max="3.0"
+            value="1.0"
+            step="0.1"
+          />
+        </div>
+        <div class="control-group">
+          <label
+            >Nombre de particules: <span id="particleCount">2000</span></label
+          >
+          <input
+            type="range"
+            id="particleSlider"
+            min="500"
+            max="5000"
+            value="2000"
+            step="100"
+          />
+        </div>
+        <div class="control-group">
+          <button id="resetBtn">Réinitialiser</button>
+          <button id="pauseBtn">Pause</button>
+        </div>
+      </div>
+
+      <div id="info">
+        <strong>Écoulement de Poiseuille</strong><br />
+        Profil de vitesse parabolique dans un canal vertical<br />
+        Les flèches rouges partent du même niveau et montrent le profil
+        parabolique<br />
+        <em>Contrôles: Molette pour zoom, clic-glisser pour rotation</em>
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+      let scene, camera, renderer, particles, velocityField;
+      let animationId;
+      let isPaused = false;
+
+      // Paramètres de simulation
+      let params = {
+        flowRate: 50,
+        viscosity: 1.0,
+        particleCount: 2000,
+        channelWidth: 4,
+        channelHeight: 8,
+      };
+
+      // Classe pour les particules
+      class FluidParticle {
+        constructor() {
+          this.position = new THREE.Vector3();
+          this.velocity = new THREE.Vector3();
+          this.reset();
+        }
+
+        reset() {
+          // Position aléatoire dans le canal
+          this.position.x = (Math.random() - 0.5) * params.channelWidth;
+          this.position.y =
+            Math.random() * params.channelHeight - params.channelHeight / 2;
+          this.position.z = (Math.random() - 0.5) * 0.5;
+
+          this.velocity.set(0, 0, 0);
+        }
+
+        update(dt) {
+          // Calcul de la vitesse basée sur le profil de Poiseuille
+          const x = this.position.x;
+          const halfWidth = params.channelWidth / 2;
+
+          // Profil parabolique: v(x) = vmax * (1 - (x/R)²)
+          const normalizedX = Math.abs(x) / halfWidth;
+          const vmax = params.flowRate * 0.01;
+
+          if (normalizedX <= 1) {
+            this.velocity.y =
+              (vmax * (1 - normalizedX * normalizedX)) / params.viscosity;
+          } else {
+            this.velocity.y = 0;
+          }
+
+          // Mise à jour de la position
+          this.position.add(this.velocity.clone().multiplyScalar(dt));
+
+          // Réinitialiser si la particule sort du canal
+          if (this.position.y > params.channelHeight / 2) {
+            this.position.y = -params.channelHeight / 2;
+          }
+
+          // Garder les particules dans le canal horizontalement
+          if (Math.abs(this.position.x) > params.channelWidth / 2) {
+            this.position.x =
+              (Math.sign(this.position.x) * params.channelWidth) / 2;
+          }
+        }
+      }
+
+      function init() {
+        // Scène
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x001122);
+
+        // Caméra
+        camera = new THREE.PerspectiveCamera(
+          75,
+          window.innerWidth / window.innerHeight,
+          0.1,
+          1000
+        );
+        camera.position.set(8, 0, 8);
+        camera.lookAt(0, 0, 0);
+
+        // Renderer
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.getElementById("container").appendChild(renderer.domElement);
+
+        // Éclairage
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 5, 5);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
+
+        // Parois du canal
+        createChannel();
+
+        // Particules
+        createParticles();
+
+        // Champ de vitesse (grille de vecteurs)
+        createVelocityField();
+
+        // Contrôles
+        setupControls();
+
+        // Gestion de la souris
+        setupMouseControls();
+
+        animate();
+      }
+
+      function createChannel() {
+        // Parois latérales
+        const wallGeometry = new THREE.PlaneGeometry(params.channelHeight, 1);
+        const wallMaterial = new THREE.MeshLambertMaterial({
+          color: 0x333333,
+          transparent: true,
+          opacity: 0.7,
+        });
+
+        const leftWall = new THREE.Mesh(wallGeometry, wallMaterial);
+        leftWall.position.x = -params.channelWidth / 2;
+        leftWall.rotation.z = Math.PI / 2;
+        scene.add(leftWall);
+
+        const rightWall = new THREE.Mesh(wallGeometry, wallMaterial);
+        rightWall.position.x = params.channelWidth / 2;
+        rightWall.rotation.z = Math.PI / 2;
+        scene.add(rightWall);
+
+        // Lignes de repère
+        const lineGeometry = new THREE.BufferGeometry();
+        const linePoints = [];
+
+        // Lignes verticales
+        for (let i = -2; i <= 2; i++) {
+          linePoints.push(i, -params.channelHeight / 2, 0);
+          linePoints.push(i, params.channelHeight / 2, 0);
+        }
+
+        // Lignes horizontales
+        for (let i = -3; i <= 3; i++) {
+          linePoints.push(-params.channelWidth / 2, i, 0);
+          linePoints.push(params.channelWidth / 2, i, 0);
+        }
+
+        lineGeometry.setAttribute(
+          "position",
+          new THREE.Float32BufferAttribute(linePoints, 3)
+        );
+        const lineMaterial = new THREE.LineBasicMaterial({ color: 0x666666 });
+        const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
+        scene.add(lines);
+      }
+
+      function createParticles() {
+        particles = [];
+
+        const particleGeometry = new THREE.SphereGeometry(0.02, 8, 8);
+        const particleMaterial = new THREE.MeshLambertMaterial({
+          color: 0x00ff88,
+        });
+
+        for (let i = 0; i < params.particleCount; i++) {
+          const particle = new FluidParticle();
+          const mesh = new THREE.Mesh(particleGeometry, particleMaterial);
+          mesh.position.copy(particle.position);
+
+          particle.mesh = mesh;
+          particles.push(particle);
+          scene.add(mesh);
+        }
+      }
+
+      function createVelocityField() {
+        velocityField = [];
+
+        // Point de référence fixe pour toutes les flèches
+        const baseY = -2;
+
+        // Tracer le profil de vitesse au centre du canal
+        for (
+          let x = -params.channelWidth / 2;
+          x <= params.channelWidth / 2;
+          x += 0.3
+        ) {
+          // Calcul de la vitesse pour cette position
+          const normalizedX = Math.abs(x) / (params.channelWidth / 2);
+          const vmax = params.flowRate * 0.01;
+          let velocity = 0;
+
+          if (normalizedX <= 1) {
+            velocity =
+              (vmax * (1 - normalizedX * normalizedX)) / params.viscosity;
+          }
+
+          // Créer une flèche avec une géométrie qui s'étend du point de base
+          const arrowLength = Math.max(0.1, velocity * 8);
+
+          // Créer la géométrie de la flèche (cylindre + cône)
+          const shaftGeometry = new THREE.CylinderGeometry(
+            0.02,
+            0.02,
+            arrowLength * 0.8,
+            8
+          );
+          const headGeometry = new THREE.ConeGeometry(
+            0.06,
+            arrowLength * 0.2,
+            8
+          );
+
+          const arrowMaterial = new THREE.MeshLambertMaterial({
+            color: 0xff4444,
+          });
+
+          // Tige de la flèche
+          const shaft = new THREE.Mesh(shaftGeometry, arrowMaterial);
+          shaft.position.set(x, baseY + arrowLength * 0.4, 0.5);
+
+          // Tête de la flèche
+          const head = new THREE.Mesh(headGeometry, arrowMaterial);
+          head.position.set(x, baseY + arrowLength * 0.9, 0.5);
+
+          // Grouper tige et tête
+          const arrowGroup = new THREE.Group();
+          arrowGroup.add(shaft);
+          arrowGroup.add(head);
+
+          velocityField.push({
+            mesh: arrowGroup,
+            shaft: shaft,
+            head: head,
+            x: x,
+            baseY: baseY,
+          });
+          scene.add(arrowGroup);
+        }
+      }
+
+      function updateVelocityField() {
+        velocityField.forEach((field) => {
+          const normalizedX = Math.abs(field.x) / (params.channelWidth / 2);
+          const vmax = params.flowRate * 0.01;
+          let velocity = 0;
+
+          if (normalizedX <= 1) {
+            velocity =
+              (vmax * (1 - normalizedX * normalizedX)) / params.viscosity;
+          }
+
+          const arrowLength = Math.max(0.1, velocity * 8);
+
+          // Mettre à jour la géométrie de la tige
+          scene.remove(field.mesh);
+          field.shaft.geometry.dispose();
+          field.head.geometry.dispose();
+
+          // Recréer la géométrie avec la nouvelle taille
+          const shaftGeometry = new THREE.CylinderGeometry(
+            0.02,
+            0.02,
+            arrowLength * 0.8,
+            8
+          );
+          const headGeometry = new THREE.ConeGeometry(
+            0.06,
+            arrowLength * 0.2,
+            8
+          );
+
+          field.shaft.geometry = shaftGeometry;
+          field.head.geometry = headGeometry;
+
+          // Repositionner les éléments
+          field.shaft.position.y = field.baseY + arrowLength * 0.4;
+          field.head.position.y = field.baseY + arrowLength * 0.9;
+
+          scene.add(field.mesh);
+        });
+      }
+
+      function setupControls() {
+        const flowRateSlider = document.getElementById("flowRateSlider");
+        const viscositySlider = document.getElementById("viscositySlider");
+        const particleSlider = document.getElementById("particleSlider");
+        const resetBtn = document.getElementById("resetBtn");
+        const pauseBtn = document.getElementById("pauseBtn");
+
+        flowRateSlider.addEventListener("input", (e) => {
+          params.flowRate = parseFloat(e.target.value);
+          document.getElementById("flowRate").textContent = params.flowRate;
+          updateVelocityField();
+        });
+
+        viscositySlider.addEventListener("input", (e) => {
+          params.viscosity = parseFloat(e.target.value);
+          document.getElementById("viscosity").textContent = params.viscosity;
+          updateVelocityField();
+        });
+
+        particleSlider.addEventListener("input", (e) => {
+          const newCount = parseInt(e.target.value);
+          document.getElementById("particleCount").textContent = newCount;
+          updateParticleCount(newCount);
+        });
+
+        resetBtn.addEventListener("click", () => {
+          particles.forEach((p) => p.reset());
+        });
+
+        pauseBtn.addEventListener("click", () => {
+          isPaused = !isPaused;
+          pauseBtn.textContent = isPaused ? "Reprendre" : "Pause";
+        });
+      }
+
+      function updateParticleCount(newCount) {
+        const currentCount = particles.length;
+
+        if (newCount > currentCount) {
+          // Ajouter des particules
+          const particleGeometry = new THREE.SphereGeometry(0.02, 8, 8);
+          const particleMaterial = new THREE.MeshLambertMaterial({
+            color: 0x00ff88,
+          });
+
+          for (let i = currentCount; i < newCount; i++) {
+            const particle = new FluidParticle();
+            const mesh = new THREE.Mesh(particleGeometry, particleMaterial);
+            mesh.position.copy(particle.position);
+
+            particle.mesh = mesh;
+            particles.push(particle);
+            scene.add(mesh);
+          }
+        } else if (newCount < currentCount) {
+          // Supprimer des particules
+          for (let i = currentCount - 1; i >= newCount; i--) {
+            scene.remove(particles[i].mesh);
+            particles.splice(i, 1);
+          }
+        }
+
+        params.particleCount = newCount;
+      }
+
+      function setupMouseControls() {
+        let mouseDown = false;
+        let mouseX = 0,
+          mouseY = 0;
+
+        renderer.domElement.addEventListener("mousedown", (e) => {
+          mouseDown = true;
+          mouseX = e.clientX;
+          mouseY = e.clientY;
+        });
+
+        renderer.domElement.addEventListener("mouseup", () => {
+          mouseDown = false;
+        });
+
+        renderer.domElement.addEventListener("mousemove", (e) => {
+          if (!mouseDown) return;
+
+          const deltaX = e.clientX - mouseX;
+          const deltaY = e.clientY - mouseY;
+
+          // Rotation de la caméra
+          const spherical = new THREE.Spherical();
+          spherical.setFromVector3(camera.position);
+          spherical.theta -= deltaX * 0.01;
+          spherical.phi += deltaY * 0.01;
+          spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi));
+
+          camera.position.setFromSpherical(spherical);
+          camera.lookAt(0, 0, 0);
+
+          mouseX = e.clientX;
+          mouseY = e.clientY;
+        });
+
+        renderer.domElement.addEventListener("wheel", (e) => {
+          const scale = e.deltaY > 0 ? 1.1 : 0.9;
+          camera.position.multiplyScalar(scale);
+        });
+      }
+
+      function animate() {
+        animationId = requestAnimationFrame(animate);
+
+        if (!isPaused) {
+          const dt = 0.016; // 60 FPS
+
+          particles.forEach((particle) => {
+            particle.update(dt);
+            particle.mesh.position.copy(particle.position);
+          });
+        }
+
+        renderer.render(scene, camera);
+      }
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      window.addEventListener("resize", onWindowResize);
+
+      // Initialisation
+      init();
+    </script>
+  </body>
+</html>
