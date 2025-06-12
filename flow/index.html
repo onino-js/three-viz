@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Test Binding Textures - Ultra Simple</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: Arial, sans-serif;
+        background: #000;
+        color: white;
+        display: flex;
+      }
+
+      #canvas {
+        background: #111;
+        border: 1px solid #333;
+      }
+
+      .controls {
+        width: 250px;
+        padding: 20px;
+        background: #222;
+        overflow-y: auto;
+      }
+
+      .control-group {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #333;
+        border-radius: 5px;
+      }
+
+      button {
+        width: 100%;
+        padding: 10px;
+        margin: 5px 0;
+        background: #007acc;
+        color: white;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+
+      button:hover {
+        background: #005499;
+      }
+
+      select {
+        width: 100%;
+        padding: 8px;
+        margin: 5px 0;
+        background: #444;
+        color: white;
+        border: 1px solid #666;
+        border-radius: 3px;
+      }
+
+      label {
+        display: block;
+        margin: 5px 0;
+        font-size: 12px;
+      }
+
+      .info {
+        background: #1a1a1a;
+        padding: 10px;
+        border-radius: 5px;
+        font-family: monospace;
+        font-size: 11px;
+        line-height: 1.4;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+
+    <div class="controls">
+      <h3>Test de Binding Ultra-Simple</h3>
+
+      <div class="control-group">
+        <h4>Mode de Test</h4>
+        <select id="testMode">
+          <option value="0">Test Texture Explicite</option>
+          <option value="1">Test Couleur Pure</option>
+          <option value="2">Test Coordonnées</option>
+          <option value="3">Test Pattern Math</option>
+        </select>
+        <button onclick="app.switchMode()">Changer Mode</button>
+      </div>
+
+      <div class="control-group">
+        <h4>Actions</h4>
+        <button onclick="app.forceWrite()">Forcer Écriture Texture</button>
+        <button onclick="app.testRead()">Tester Lecture</button>
+        <button onclick="app.diagnose()">Diagnostic Complet</button>
+      </div>
+
+      <div class="control-group">
+        <h4>Diagnostic</h4>
+        <div id="diagnosticInfo" class="info">Initialisation...</div>
+      </div>
+    </div>
+
+    <script>
+      class TextureBindingTest {
+        constructor() {
+          this.canvas = document.getElementById("canvas");
+          this.canvas.width = window.innerWidth - 280;
+          this.canvas.height = window.innerHeight;
+
+          this.gl = this.canvas.getContext("webgl2");
+          if (!this.gl) {
+            alert("WebGL2 non supporté");
+            return;
+          }
+
+          this.width = 400; // Résolution fixe pour test
+          this.height = 100;
+
+          this.currentMode = 0;
+          this.init();
+        }
+
+        init() {
+          const gl = this.gl;
+
+          console.log("🚀 Initialisation test de binding");
+
+          // Extension float obligatoire
+          this.ext = gl.getExtension("EXT_color_buffer_float");
+          if (!this.ext) {
+            this.updateDiagnostic("❌ Float textures non supportées");
+            return;
+          }
+
+          this.createShaders();
+          this.createGeometry();
+          this.createTextures();
+          this.createFramebuffers();
+
+          this.updateDiagnostic("✅ Initialisation terminée");
+          this.forceWrite();
+          this.render();
+        }
+
+        createShaders() {
+          const gl = this.gl;
+
+          // Vertex shader basique
+          const vertexSource = `#version 300 es
+            in vec2 a_position;
+            out vec2 v_texCoord;
+            void main() {
+                v_texCoord = a_position * 0.5 + 0.5;
+                gl_Position = vec4(a_position, 0.0, 1.0);
+            }`;
+
+          // Fragment shader ultra-simple pour tests
+          const fragmentSource = `#version 300 es
+            precision highp float;
+            uniform sampler2D u_texture;
+            uniform int u_mode;
+            in vec2 v_texCoord;
+            out vec4 fragColor;
+            
+            void main() {
+                vec2 pos = v_texCoord;
+                
+                if (u_mode == 0) {
+                    // Test texture explicite - lecture directe
+                    vec4 texValue = texture(u_texture, pos);
+                    // Amplifier pour voir quelque chose
+                    fragColor = vec4(texValue.rgb * 100.0, 1.0);
+                    
+                } else if (u_mode == 1) {
+                    // Test couleur pure (pas de texture)
+                    fragColor = vec4(1.0, 0.0, 0.0, 1.0); // Rouge pur
+                    
+                } else if (u_mode == 2) {
+                    // Test coordonnées
+                    fragColor = vec4(pos.x, pos.y, 0.0, 1.0);
+                    
+                } else if (u_mode == 3) {
+                    // Test pattern mathématique
+                    float pattern = sin(pos.x * 20.0) * cos(pos.y * 20.0);
+                    fragColor = vec4(pattern * 0.5 + 0.5, 0.0, 0.0, 1.0);
+                }
+            }`;
+
+          this.program = this.createProgram(vertexSource, fragmentSource);
+        }
+
+        createProgram(vertexSource, fragmentSource) {
+          const gl = this.gl;
+
+          const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+          gl.shaderSource(vertexShader, vertexSource);
+          gl.compileShader(vertexShader);
+          if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
+            console.error(
+              "Vertex shader error:",
+              gl.getShaderInfoLog(vertexShader)
+            );
+          }
+
+          const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+          gl.shaderSource(fragmentShader, fragmentSource);
+          gl.compileShader(fragmentShader);
+          if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
+            console.error(
+              "Fragment shader error:",
+              gl.getShaderInfoLog(fragmentShader)
+            );
+          }
+
+          const program = gl.createProgram();
+          gl.attachShader(program, vertexShader);
+          gl.attachShader(program, fragmentShader);
+          gl.linkProgram(program);
+
+          if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            console.error("Program error:", gl.getProgramInfoLog(program));
+          }
+
+          return program;
+        }
+
+        createGeometry() {
+          const gl = this.gl;
+
+          // Quad plein écran
+          const vertices = new Float32Array([
+            -1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1,
+          ]);
+
+          this.quadBuffer = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+        }
+
+        createTextures() {
+          const gl = this.gl;
+
+          console.log("🎨 Création des textures...");
+
+          this.texture = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, this.texture);
+
+          // Créer texture vide d'abord
+          gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGBA32F,
+            this.width,
+            this.height,
+            0,
+            gl.RGBA,
+            gl.FLOAT,
+            null
+          );
+
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+          console.log("✅ Texture créée");
+        }
+
+        createFramebuffers() {
+          const gl = this.gl;
+
+          console.log("🖼️ Création du framebuffer...");
+
+          this.framebuffer = gl.createFramebuffer();
+          gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+
+          // Attacher la texture
+          gl.framebufferTexture2D(
+            gl.FRAMEBUFFER,
+            gl.COLOR_ATTACHMENT0,
+            gl.TEXTURE_2D,
+            this.texture,
+            0
+          );
+
+          // VÉRIFICATION CRITIQUE
+          const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+          if (status !== gl.FRAMEBUFFER_COMPLETE) {
+            console.error(`❌ Framebuffer incomplete: ${status}`);
+            this.updateDiagnostic(`❌ Framebuffer status: ${status}`);
+          } else {
+            console.log("✅ Framebuffer complete");
+            this.updateDiagnostic("✅ Framebuffer OK");
+          }
+
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        }
+
+        forceWrite() {
+          const gl = this.gl;
+
+          console.log("✍️ Force Write - Écriture directe dans la texture");
+
+          // Créer des données explicites
+          const data = new Float32Array(this.width * this.height * 4);
+          for (let i = 0; i < this.width * this.height; i++) {
+            const x = i % this.width;
+            const y = Math.floor(i / this.width);
+            const idx = i * 4;
+
+            // Pattern simple: gradient horizontal
+            data[idx] = x / this.width; // Rouge = position X
+            data[idx + 1] = y / this.height; // Vert = position Y
+            data[idx + 2] = 0.5; // Bleu constant
+            data[idx + 3] = 1.0; // Alpha
+          }
+
+          // ÉCRITURE FORCÉE
+          gl.bindTexture(gl.TEXTURE_2D, this.texture);
+          gl.texSubImage2D(
+            gl.TEXTURE_2D,
+            0,
+            0,
+            0,
+            this.width,
+            this.height,
+            gl.RGBA,
+            gl.FLOAT,
+            data
+          );
+
+          console.log("✅ Données écrites dans la texture");
+          console.log(
+            `Première valeur: R=${data[0]}, G=${data[1]}, B=${data[2]}`
+          );
+
+          this.updateDiagnostic(
+            `✅ Texture écrite: ${this.width}x${this.height}`
+          );
+          this.render();
+        }
+
+        testRead() {
+          const gl = this.gl;
+
+          console.log("👁️ Test Read - Lecture de la texture");
+
+          // Créer un framebuffer temporaire pour lecture
+          const readBuffer = new Float32Array(this.width * this.height * 4);
+
+          gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+          gl.readPixels(
+            0,
+            0,
+            this.width,
+            this.height,
+            gl.RGBA,
+            gl.FLOAT,
+            readBuffer
+          );
+
+          // Vérifier quelques valeurs
+          console.log(
+            `Valeur (0,0): R=${readBuffer[0]}, G=${readBuffer[1]}, B=${readBuffer[2]}`
+          );
+          console.log(
+            `Valeur (10,10): R=${readBuffer[10 * this.width * 4]}, G=${
+              readBuffer[10 * this.width * 4 + 1]
+            }`
+          );
+
+          this.updateDiagnostic(
+            `Test lecture: première valeur = ${readBuffer[0].toFixed(3)}`
+          );
+
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        }
+
+        switchMode() {
+          this.currentMode = parseInt(
+            document.getElementById("testMode").value
+          );
+          console.log(`🔄 Mode changé: ${this.currentMode}`);
+          this.render();
+        }
+
+        render() {
+          const gl = this.gl;
+
+          // Rendu vers le canvas
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+
+          gl.useProgram(this.program);
+
+          // Géométrie
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+          const posLoc = gl.getAttribLocation(this.program, "a_position");
+          gl.enableVertexAttribArray(posLoc);
+          gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+          // Texture
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, this.texture);
+          gl.uniform1i(gl.getUniformLocation(this.program, "u_texture"), 0);
+
+          // Mode
+          gl.uniform1i(
+            gl.getUniformLocation(this.program, "u_mode"),
+            this.currentMode
+          );
+
+          // Rendu
+          gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+          console.log(`🎬 Rendu mode ${this.currentMode}`);
+        }
+
+        diagnose() {
+          const gl = this.gl;
+
+          console.log("🔍 DIAGNOSTIC COMPLET");
+
+          let diagnostic = "=== DIAGNOSTIC ===\n";
+
+          // Extensions
+          diagnostic += `Float textures: ${this.ext ? "✅" : "❌"}\n`;
+
+          // Limites WebGL
+          diagnostic += `Max texture size: ${gl.getParameter(
+            gl.MAX_TEXTURE_SIZE
+          )}\n`;
+          diagnostic += `Max renderbuffer size: ${gl.getParameter(
+            gl.MAX_RENDERBUFFER_SIZE
+          )}\n`;
+
+          // Statut actuel
+          diagnostic += `Canvas: ${this.canvas.width}x${this.canvas.height}\n`;
+          diagnostic += `Texture: ${this.width}x${this.height}\n`;
+          diagnostic += `Mode: ${this.currentMode}\n`;
+
+          // Erreurs GL
+          const error = gl.getError();
+          diagnostic += `GL Error: ${
+            error === gl.NO_ERROR ? "Aucune" : error
+          }\n`;
+
+          console.log(diagnostic);
+          this.updateDiagnostic(diagnostic);
+        }
+
+        updateDiagnostic(text) {
+          document.getElementById("diagnosticInfo").textContent = text;
+        }
+      }
+
+      // Initialiser l'application
+      window.app = new TextureBindingTest();
+    </script>
+  </body>
+</html>

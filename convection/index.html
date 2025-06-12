@@ -1,0 +1,1363 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Convection Latérale WebGL</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background: linear-gradient(135deg, #0f0f23, #1a1a2e);
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        overflow: hidden;
+      }
+
+      #container {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+      }
+
+      #canvas {
+        flex: 1;
+        border: 2px solid #333;
+        cursor: crosshair;
+      }
+
+      #controls {
+        width: 300px;
+        background: rgba(0, 0, 0, 0.9);
+        padding: 20px;
+        color: white;
+        backdrop-filter: blur(10px);
+        overflow-y: auto;
+      }
+
+      .control-group {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+      }
+
+      .control-group h4 {
+        margin: 0 0 10px 0;
+        color: #4caf50;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 12px;
+      }
+
+      input[type="range"] {
+        width: 100%;
+        margin-bottom: 5px;
+      }
+
+      .value-display {
+        font-size: 11px;
+        color: #aaa;
+        text-align: right;
+      }
+
+      button {
+        background: #4caf50;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 5px;
+        cursor: pointer;
+        margin: 5px;
+        width: calc(50% - 10px);
+      }
+
+      button:hover {
+        background: #45a049;
+      }
+
+      button.active {
+        background: #ff6b35;
+      }
+
+      #info {
+        background: rgba(0, 0, 0, 0.8);
+        padding: 10px;
+        border-radius: 5px;
+        font-size: 11px;
+        margin-top: 10px;
+      }
+
+      .warning {
+        color: #ff6b35;
+        font-size: 10px;
+        margin-top: 3px;
+      }
+
+      .color-bar {
+        height: 20px;
+        background: linear-gradient(
+          to right,
+          #000080,
+          #0000ff,
+          #00ffff,
+          #00ff00,
+          #ffff00,
+          #ff8000,
+          #ff0000
+        );
+        border-radius: 3px;
+        margin: 5px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="container">
+      <canvas id="canvas"></canvas>
+      <div id="controls">
+        <h3>Convection Latérale WebGL</h3>
+
+        <div class="control-group">
+          <h4>Paramètres Physiques</h4>
+          <label>Nombre de Grashof: <span id="grashofValue">2000</span></label>
+          <input
+            type="range"
+            id="grashofSlider"
+            min="500"
+            max="10000"
+            value="2000"
+            step="100"
+          />
+
+          <label>Nombre de Prandtl: <span id="prandtlValue">0.7</span></label>
+          <input
+            type="range"
+            id="prandtlSlider"
+            min="0.1"
+            max="10"
+            value="0.7"
+            step="0.1"
+          />
+
+          <label>Pas de temps: <span id="dtValue">0.001</span></label>
+          <input
+            type="range"
+            id="dtSlider"
+            min="0.0001"
+            max="0.01"
+            value="0.001"
+            step="0.0001"
+          />
+        </div>
+
+        <div class="control-group">
+          <h4>Résolution</h4>
+          <label>Taille: <span id="resolutionValue">512x256</span></label>
+          <input
+            type="range"
+            id="resolutionSlider"
+            min="128"
+            max="1024"
+            value="512"
+            step="128"
+          />
+          <div class="warning">⚠️ Haute résolution = GPU intensif</div>
+        </div>
+
+        <div class="control-group">
+          <h4>Visualisation</h4>
+          <button id="tempBtn" class="active">Température</button>
+          <button id="velocityBtn">Vitesse</button>
+          <button id="buoyancyBtn">Forces</button>
+          <button id="tempDebugBtn">Temp Debug</button>
+          <button id="pressureBtn">Pression</button>
+          <button id="vectorsBtn">🏹 Vecteurs</button>
+
+          <div class="color-bar"></div>
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              font-size: 10px;
+            "
+          >
+            <span>Froid</span>
+            <span>Chaud</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <h4>Contrôles</h4>
+          <button id="startBtn">Démarrer</button>
+          <button id="pauseBtn">Pause</button>
+          <button id="resetBtn">Reset</button>
+          <button id="perturbBtn">Perturber</button>
+        </div>
+
+        <div id="info">
+          <strong>État:</strong> <span id="status">Arrêté</span><br />
+          <strong>Phase:</strong> <span id="phase">Diffusion</span><br />
+          <strong>Temps:</strong> <span id="timeValue">0.0</span>s<br />
+          <strong>FPS:</strong> <span id="fps">0</span><br />
+          <div style="margin-top: 5px; font-size: 10px">
+            <em>🔥 Convection latérale GPU</em><br />
+            <em>Conditions: Gauche chaud, Droite froid</em><br />
+            <em>Parois haut/bas: Adiabatiques</em><br />
+            <em>Clic pour perturber localement</em>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      class ConvectionLateraleWebGL {
+        constructor() {
+          this.canvas = document.getElementById("canvas");
+          this.gl = this.canvas.getContext("webgl2");
+
+          if (!this.gl) {
+            alert("WebGL2 requis pour cette simulation");
+            return;
+          }
+
+          this.canvas.width = window.innerWidth - 300;
+          this.canvas.height = window.innerHeight;
+
+          // Paramètres
+          this.params = {
+            grashof: 2000, // Pour convection latérale
+            prandtl: 0.7,
+            dt: 0.0005, // Pas de temps plus petit pour stabilité
+            resolution: 512, // Résolution plus raisonnable
+            aspectRatio: 2.0,
+          };
+
+          this.state = {
+            isRunning: false,
+            time: 0,
+            phase: "convection", // DÉMARRER DIRECTEMENT EN CONVECTION
+            diffusionTime: 0.0, // Pas de phase diffusion
+            visualMode: "temperature",
+          };
+
+          this.initWebGL();
+          this.setupControls();
+          this.setupMouseEvents();
+          this.reset();
+
+          this.lastTime = 0;
+          this.frameCount = 0;
+          this.fpsTime = 0;
+
+          console.log("🔥 Simulation Convection Latérale WebGL initialisée");
+          console.log("🚀 GPU compute shaders pour haute performance");
+          console.log("Resolution:", this.width, "x", this.height);
+        }
+
+        initWebGL() {
+          const gl = this.gl;
+
+          // Extensions
+          this.ext = {
+            float: gl.getExtension("EXT_color_buffer_float"),
+            linear: gl.getExtension("OES_texture_float_linear"),
+          };
+
+          if (!this.ext.float) {
+            console.warn("Float textures non supportées");
+          }
+
+          this.updateResolution();
+          this.createShaders();
+          this.createTextures();
+          this.createFramebuffers();
+
+          // Quad pour le rendu
+          this.quadBuffer = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+          gl.bufferData(
+            gl.ARRAY_BUFFER,
+            new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+            gl.STATIC_DRAW
+          );
+        }
+
+        updateResolution() {
+          this.width = this.params.resolution;
+          this.height = Math.floor(this.width / this.params.aspectRatio);
+          document.getElementById(
+            "resolutionValue"
+          ).textContent = `${this.width}x${this.height}`;
+        }
+
+        createShaders() {
+          const gl = this.gl;
+
+          // Vertex shader commun
+          const vertexSource = `#version 300 es
+                    in vec2 a_position;
+                    out vec2 v_texCoord;
+                    void main() {
+                        v_texCoord = a_position * 0.5 + 0.5;
+                        gl_Position = vec4(a_position, 0.0, 1.0);
+                    }`;
+
+          // Fragment shader pour la diffusion thermique
+          const thermalDiffusionSource = `#version 300 es
+                    precision highp float;
+                    uniform sampler2D u_temperature;
+                    uniform sampler2D u_velocity;
+                    uniform vec2 u_resolution;
+                    uniform float u_dt;
+                    uniform float u_phase;
+                    in vec2 v_texCoord;
+                    out vec4 fragColor;
+
+                    void main() {
+                        vec2 texel = 1.0 / u_resolution;
+                        vec2 pos = v_texCoord;
+
+                        float T = texture(u_temperature, pos).r;
+                        float T_left = texture(u_temperature, pos + vec2(-texel.x, 0.0)).r;
+                        float T_right = texture(u_temperature, pos + vec2(texel.x, 0.0)).r;
+                        float T_up = texture(u_temperature, pos + vec2(0.0, texel.y)).r;
+                        float T_down = texture(u_temperature, pos + vec2(0.0, -texel.y)).r;
+
+                                                 // Conditions aux limites température fixe gauche/droite (CONVECTION LATÉRALE)
+                         if (pos.x < texel.x) {
+                             fragColor = vec4(1.0, 0.0, 0.0, 1.0); // Gauche chaud
+                             return;
+                         }
+                         if (pos.x > 1.0 - texel.x) {
+                             fragColor = vec4(0.0, 0.0, 0.0, 1.0); // Droite froid
+                             return;
+                         }
+
+                         // Conditions aux limites adiabatiques haut/bas
+                         if (pos.y < texel.y*1.5) T_down = T;
+                         if (pos.y > 1.0 - texel.y*1.5) T_up = T;
+
+                        // Diffusion thermique avec coefficient adaptatif
+                        float alpha = 0.1; // Diffusivité réduite pour stabilité
+                        float dx2 = texel.x * texel.x;
+                        float laplacian = (T_left + T_right + T_up + T_down - 4.0 * T) / dx2;
+
+                        // Condition CFL pour la stabilité
+                        float max_dt = 0.25 * dx2 / alpha;
+                        float safe_dt = min(u_dt, max_dt);
+
+                        // Advection (seulement en phase convection)
+                        float advection = 0.0;
+                        if (u_phase > 0.5) {
+                            vec2 vel = texture(u_velocity, pos).xy * 0.1; // Réduire la vitesse
+                            float T_grad_x = (T_right - T_left) / (2.0 * texel.x);
+                            float T_grad_y = (T_up - T_down) / (2.0 * texel.y);
+                            advection = -(vel.x * T_grad_x + vel.y * T_grad_y);
+                        }
+
+                        float newT = T + safe_dt * (alpha * laplacian + advection);
+                        fragColor = vec4(clamp(newT, 0.0, 1.0), 0.0, 0.0, 1.0);
+                    }`;
+
+          // Fragment shader pour la vitesse
+          const velocitySource = `#version 300 es
+                    precision highp float;
+                    uniform sampler2D u_velocity;
+                    uniform sampler2D u_temperature;
+                    uniform sampler2D u_pressure;
+                    uniform vec2 u_resolution;
+                    uniform float u_dt;
+                                         uniform float u_grashof;
+                    uniform float u_prandtl;
+                    uniform float u_phase;
+                    in vec2 v_texCoord;
+                    out vec4 fragColor;
+
+                    void main() {
+                                                 // Toujours calculer la vitesse (suppression de la condition de phase)
+
+                        vec2 texel = 1.0 / u_resolution;
+                        vec2 pos = v_texCoord;
+
+                                                 // Conditions aux limites strictes pour les parois
+                         // Vitesse nulle sur TOUTES les parois
+                         if (pos.x <= texel.x*1.5 || pos.x >= 1.0 - texel.x*1.5 ||
+                             pos.y <= texel.y*1.5 || pos.y >= 1.0 - texel.y*1.5) {
+                             fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+                             return;
+                         }
+
+                        vec2 vel = texture(u_velocity, pos).xy;
+                        float T = texture(u_temperature, pos).r;
+
+                                                 // Voisins pour la vitesse avec conditions aux limites
+                         vec2 vel_left = texture(u_velocity, pos + vec2(-texel.x, 0.0)).xy;
+                         vec2 vel_right = texture(u_velocity, pos + vec2(texel.x, 0.0)).xy;
+                         vec2 vel_up = texture(u_velocity, pos + vec2(0.0, texel.y)).xy;
+                         vec2 vel_down = texture(u_velocity, pos + vec2(0.0, -texel.y)).xy;
+
+                         // Imposer conditions aux limites sur les voisins aussi
+                         if (pos.x - texel.x <= texel.x*1.5) vel_left = vec2(0.0); // Paroi gauche
+                         if (pos.x + texel.x >= 1.0 - texel.x*1.5) vel_right = vec2(0.0); // Paroi droite
+                         if (pos.y - texel.y <= texel.y*1.5) vel_down = vec2(0.0); // Paroi bas
+                         if (pos.y + texel.y >= 1.0 - texel.y*1.5) vel_up = vec2(0.0); // Paroi haut
+
+                         // Diffusion visqueuse RÉDUITE
+                         float nu = 0.0001; // Réduire la diffusion de 10x
+                         vec2 laplacian_vel = (vel_left + vel_right + vel_up + vel_down - 4.0 * vel) / (texel.x * texel.x);
+
+                         // PAS d'advection pour simplifier (terme non-linéaire problématique)
+                         // vec2 advection = vec2(0.0, 0.0);
+
+                         // FORCES DE FLOTTABILITÉ AMPLIFIÉES
+                         vec2 buoyancy = vec2(0.0, 0.0);
+                         
+                         // Test simple et direct avec forces plus importantes
+                         if (T > 0.6) {
+                             buoyancy.y = 0.5;  // Force vers le haut si chaud (10x plus fort)
+                         } else if (T < 0.4) {
+                             buoyancy.y = -0.5; // Force vers le bas si froid (10x plus fort)
+                         } else {
+                             buoyancy.y = (T - 0.5) * 1.0; // Force proportionnelle (10x plus fort)
+                         }
+
+                         // DEBUG: Stocker la température ET force dans les canaux Z et W
+                         float buoyancy_debug = buoyancy.y;
+                         float temperature_debug = T;
+
+                         // Équation simplifiée : dv/dt = nu*∇²v + F_buoyancy (PAS de pression pour l'instant)
+                         vec2 newVel = vel + u_dt * (nu * laplacian_vel + buoyancy);
+
+                         // Limiter la vitesse
+                         float maxVel = 0.01;
+                         newVel = clamp(newVel, vec2(-maxVel), vec2(maxVel));
+
+                         // Vérification anti-NaN
+                         if (any(isnan(newVel)) || any(isinf(newVel))) {
+                             newVel = vec2(0.0, 0.0);
+                         }
+
+                         fragColor = vec4(newVel, buoyancy_debug, temperature_debug);
+                    }`;
+
+          // Fragment shader pour la projection (incompressibilité)
+          const projectionSource = `#version 300 es
+                    precision highp float;
+                    uniform sampler2D u_velocity;
+                    uniform sampler2D u_pressure;
+                    uniform vec2 u_resolution;
+                    uniform float u_dt;
+                    in vec2 v_texCoord;
+                    out vec4 fragColor;
+
+                    void main() {
+                        vec2 texel = 1.0 / u_resolution;
+                        vec2 pos = v_texCoord;
+
+                                                 // Conditions aux limites de pression Neumann (gradient normal nul)
+                         if (pos.x <= texel.x) {
+                             // Paroi gauche : dP/dx = 0
+                             float p_right = texture(u_pressure, pos + vec2(texel.x, 0.0)).r;
+                             fragColor = vec4(p_right, 0.0, 0.0, 1.0);
+                             return;
+                         }
+                         if (pos.x >= 1.0 - texel.x) {
+                             // Paroi droite : dP/dx = 0
+                             float p_left = texture(u_pressure, pos + vec2(-texel.x, 0.0)).r;
+                             fragColor = vec4(p_left, 0.0, 0.0, 1.0);
+                             return;
+                         }
+                         if (pos.y <= texel.y) {
+                             // Paroi bas : dP/dy = 0
+                             float p_up = texture(u_pressure, pos + vec2(0.0, texel.y)).r;
+                             fragColor = vec4(p_up, 0.0, 0.0, 1.0);
+                             return;
+                         }
+                         if (pos.y >= 1.0 - texel.y) {
+                             // Paroi haut : dP/dy = 0
+                             float p_down = texture(u_pressure, pos + vec2(0.0, -texel.y)).r;
+                             fragColor = vec4(p_down, 0.0, 0.0, 1.0);
+                             return;
+                         }
+
+                        // Divergence de la vitesse
+                        vec2 vel_left = texture(u_velocity, pos + vec2(-texel.x, 0.0)).xy;
+                        vec2 vel_right = texture(u_velocity, pos + vec2(texel.x, 0.0)).xy;
+                        vec2 vel_up = texture(u_velocity, pos + vec2(0.0, texel.y)).xy;
+                        vec2 vel_down = texture(u_velocity, pos + vec2(0.0, -texel.y)).xy;
+
+                        float divergence = (vel_right.x - vel_left.x) / (2.0 * texel.x) +
+                                         (vel_up.y - vel_down.y) / (2.0 * texel.y);
+
+                        // Résolution de Poisson pour la pression
+                        float p_left = texture(u_pressure, pos + vec2(-texel.x, 0.0)).r;
+                        float p_right = texture(u_pressure, pos + vec2(texel.x, 0.0)).r;
+                        float p_up = texture(u_pressure, pos + vec2(0.0, texel.y)).r;
+                        float p_down = texture(u_pressure, pos + vec2(0.0, -texel.y)).r;
+
+                                                 // Résolution de Poisson pour pression (incompressibilité)
+                         float p_old = texture(u_pressure, pos).r;
+                         float dx2 = texel.x * texel.x;
+                         float newP = 0.25 * (p_left + p_right + p_up + p_down - divergence * dx2);
+
+                         // Sur-relaxation successive (SOR) pour accélérer la convergence
+                         float omega = 1.8;
+                         newP = p_old + omega * (newP - p_old);
+
+                        fragColor = vec4(newP, 0.0, 0.0, 1.0);
+                    }`;
+
+          // Fragment shader pour correction de vitesse par projection
+          const velocityCorrectionSource = `#version 300 es
+                    precision highp float;
+                    uniform sampler2D u_velocity;
+                    uniform sampler2D u_pressure;
+                    uniform vec2 u_resolution;
+                    uniform float u_dt;
+                    in vec2 v_texCoord;
+                    out vec4 fragColor;
+
+                    void main() {
+                        vec2 texel = 1.0 / u_resolution;
+                        vec2 pos = v_texCoord;
+
+                        // Forcer vitesse nulle sur TOUTES les parois (no-slip strict)
+                        if (pos.x <= texel.x*1.5 || pos.x >= 1.0 - texel.x*1.5 ||
+                            pos.y <= texel.y*1.5 || pos.y >= 1.0 - texel.y*1.5) {
+                            fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+                            return;
+                        }
+
+                        // Vitesse actuelle (avant correction)
+                        vec2 vel = texture(u_velocity, pos).xy;
+
+                        // Gradient de pression pour correction
+                        float p_left = texture(u_pressure, pos + vec2(-texel.x, 0.0)).r;
+                        float p_right = texture(u_pressure, pos + vec2(texel.x, 0.0)).r;
+                        float p_down = texture(u_pressure, pos + vec2(0.0, -texel.y)).r;
+                        float p_up = texture(u_pressure, pos + vec2(0.0, texel.y)).r;
+
+                        vec2 pressureGrad = vec2(
+                            (p_right - p_left) / (2.0 * texel.x),
+                            (p_up - p_down) / (2.0 * texel.y)
+                        );
+
+                        // Correction de projection CORRECTE: v^(n+1) = v* - dt*∇p
+                        // Pas d'amortissement - c'est de la physique pure !
+                        vec2 correctedVel = vel - u_dt * pressureGrad;
+
+                        // Garder les autres composantes
+                        vec4 originalData = texture(u_velocity, pos);
+                        fragColor = vec4(correctedVel, originalData.z, originalData.w);
+                    }`;
+
+          // Fragment shader pour le rendu
+          const renderSource = `#version 300 es
+                    precision highp float;
+                    uniform sampler2D u_texture;
+                    uniform int u_mode;
+                    in vec2 v_texCoord;
+                    out vec4 fragColor;
+
+                    vec3 temperatureColor(float t) {
+                        t = clamp(t, 0.0, 1.0);
+                        if (t < 0.25) {
+                            return mix(vec3(0.0, 0.0, 0.5), vec3(0.0, 0.0, 1.0), t * 4.0);
+                        } else if (t < 0.5) {
+                            return mix(vec3(0.0, 0.0, 1.0), vec3(0.0, 1.0, 1.0), (t - 0.25) * 4.0);
+                        } else if (t < 0.75) {
+                            return mix(vec3(0.0, 1.0, 1.0), vec3(1.0, 1.0, 0.0), (t - 0.5) * 4.0);
+                        } else {
+                            return mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), (t - 0.75) * 4.0);
+                        }
+                    }
+
+                    void main() {
+                        vec4 data = texture(u_texture, v_texCoord);
+
+                        if (u_mode == 0) { // Température
+                            fragColor = vec4(temperatureColor(data.r), 1.0);
+                                                 } else if (u_mode == 1) { // Vitesse avec debug amélioré
+                             float vx = data.x;
+                             float vy = data.y;
+                             float mag = length(data.xy);
+
+                             if (mag < 0.00001) {
+                                 // Si vitesse quasi-nulle, afficher en gris
+                                 fragColor = vec4(0.1, 0.1, 0.1, 1.0);
+                             } else {
+                                 // Visualisation directionnelle :
+                                 // Rouge = vx > 0 (droite), Cyan = vx < 0 (gauche)
+                                 // Vert = vy > 0 (haut), Magenta = vy < 0 (bas)
+                                 float amplification = 2000.0;
+                                 vec3 velColor = vec3(
+                                     0.5 + vx * amplification,  // Composante horizontale
+                                     0.5 + vy * amplification,  // Composante verticale
+                                     0.3                         // Référence bleue
+                                 );
+                                 fragColor = vec4(clamp(velColor, 0.0, 1.0), 1.0);
+                             }
+                                                 } else if (u_mode == 2) { // Forces de flottabilité
+                             float force = data.z; // Force de flottabilité stockée dans Z
+                             vec3 forceColor;
+                             if (force > 0.001) {
+                                 forceColor = vec3(1.0, 0.0, 0.0) * force * 20.0; // Rouge pour force vers le haut
+                             } else if (force < -0.001) {
+                                 forceColor = vec3(0.0, 0.0, 1.0) * (-force) * 20.0; // Bleu pour force vers le bas
+                             } else {
+                                 forceColor = vec3(0.2, 0.2, 0.2); // Gris si force nulle
+                             }
+                             fragColor = vec4(clamp(forceColor, 0.0, 1.0), 1.0);
+                         } else if (u_mode == 3) { // Température vue par shader vitesse
+                             float T_from_velocity = data.w; // Température stockée dans W
+                             fragColor = vec4(temperatureColor(T_from_velocity), 1.0);
+                        } else if (u_mode == 5) { // Champ vectoriel
+                            vec2 vel = data.xy;
+                            float mag = length(vel);
+
+                            // Créer une grille de flèches plus dense
+                            vec2 pos = v_texCoord;
+                            vec2 gridPos = floor(pos * 48.0) / 48.0 + 1.0/96.0; // Grille 48x48 (plus dense)
+                            vec2 localPos = fract(pos * 48.0) - 0.5; // Position dans chaque cellule [-0.5, 0.5]
+
+                            // Échantillonner la vitesse au centre de la cellule
+                            vec2 gridVel = texture(u_texture, gridPos).xy;
+                            float gridMag = length(gridVel) * 1000.0; // Amplifier pour visibilité
+
+                            // Dessiner une flèche plus petite si la vitesse est significative
+                            float arrow = 0.0;
+                            if (gridMag > 0.001) {
+                                vec2 dir = normalize(gridVel);
+
+                                // Corps de la flèche (ligne plus fine et plus courte)
+                                float line = 1.0 - smoothstep(0.01, 0.025, abs(dot(localPos, vec2(-dir.y, dir.x))));
+                                float length_mask = step(-0.2, dot(localPos, dir)) * step(dot(localPos, dir), 0.15);
+
+                                // Pointe de la flèche (deux traits en V)
+                                vec2 tipPos = dir * 0.15;
+                                vec2 perpDir = vec2(-dir.y, dir.x);
+
+                                // Trait gauche de la pointe
+                                vec2 leftArm = tipPos - dir * 0.08 - perpDir * 0.05;
+                                float leftLine = 1.0 - smoothstep(0.008, 0.015,
+                                    abs(dot(localPos - leftArm, normalize(tipPos - leftArm))));
+                                float leftMask = step(0.0, dot(localPos - leftArm, leftArm - tipPos)) *
+                                               step(0.0, dot(localPos - tipPos, tipPos - leftArm));
+
+                                // Trait droit de la pointe
+                                vec2 rightArm = tipPos - dir * 0.08 + perpDir * 0.05;
+                                float rightLine = 1.0 - smoothstep(0.008, 0.015,
+                                    abs(dot(localPos - rightArm, normalize(tipPos - rightArm))));
+                                float rightMask = step(0.0, dot(localPos - rightArm, rightArm - tipPos)) *
+                                                step(0.0, dot(localPos - tipPos, tipPos - rightArm));
+
+                                float arrowhead = max(leftLine * leftMask, rightLine * rightMask);
+
+                                arrow = max(line * length_mask, arrowhead) * min(gridMag * 10.0, 1.0);
+                            }
+
+                            // Couleur de fond basée sur la magnitude
+                            vec3 bgColor = mix(vec3(0.1), vec3(0.3, 0.0, 0.0), min(mag * 500.0, 1.0));
+                            vec3 arrowColor = vec3(1.0, 1.0, 0.0); // Flèches jaunes
+
+                            fragColor = vec4(mix(bgColor, arrowColor, arrow), 1.0);
+                        } else { // Pression
+                            float p = data.r * 0.5 + 0.5;
+                            // Améliorer la visualisation de la pression avec gradient de couleur
+                            vec3 pressureColor;
+                            if (p < 0.5) {
+                                pressureColor = mix(vec3(0.0, 0.0, 1.0), vec3(0.5, 0.5, 1.0), p * 2.0);
+                            } else {
+                                pressureColor = mix(vec3(0.5, 0.5, 1.0), vec3(1.0, 0.0, 0.0), (p - 0.5) * 2.0);
+                            }
+                            fragColor = vec4(pressureColor, 1.0);
+                        }
+                    }`;
+
+          this.programs = {
+            thermalDiffusion: this.createProgram(
+              vertexSource,
+              thermalDiffusionSource
+            ),
+            velocity: this.createProgram(vertexSource, velocitySource),
+            projection: this.createProgram(vertexSource, projectionSource),
+            velocityCorrection: this.createProgram(
+              vertexSource,
+              velocityCorrectionSource
+            ),
+            render: this.createProgram(vertexSource, renderSource),
+          };
+        }
+
+        createProgram(vertexSource, fragmentSource) {
+          const gl = this.gl;
+
+          const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+          gl.shaderSource(vertexShader, vertexSource);
+          gl.compileShader(vertexShader);
+
+          const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+          gl.shaderSource(fragmentShader, fragmentSource);
+          gl.compileShader(fragmentShader);
+
+          const program = gl.createProgram();
+          gl.attachShader(program, vertexShader);
+          gl.attachShader(program, fragmentShader);
+          gl.linkProgram(program);
+
+          if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            console.error("Erreur de liaison:", gl.getProgramInfoLog(program));
+          }
+
+          return program;
+        }
+
+        createTextures() {
+          const gl = this.gl;
+
+          this.textures = {
+            temperature: [this.createTexture(), this.createTexture()],
+            velocity: [this.createTexture(), this.createTexture()],
+            pressure: [this.createTexture(), this.createTexture()],
+          };
+
+          this.currentTexture = 0;
+        }
+
+        createTexture() {
+          const gl = this.gl;
+          const texture = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGBA32F,
+            this.width,
+            this.height,
+            0,
+            gl.RGBA,
+            gl.FLOAT,
+            null
+          );
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          return texture;
+        }
+
+        createFramebuffers() {
+          const gl = this.gl;
+          this.framebuffers = {
+            temperature: [gl.createFramebuffer(), gl.createFramebuffer()],
+            velocity: [gl.createFramebuffer(), gl.createFramebuffer()],
+            pressure: [gl.createFramebuffer(), gl.createFramebuffer()],
+          };
+
+          ["temperature", "velocity", "pressure"].forEach((type) => {
+            [0, 1].forEach((i) => {
+              gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers[type][i]);
+              gl.framebufferTexture2D(
+                gl.FRAMEBUFFER,
+                gl.COLOR_ATTACHMENT0,
+                gl.TEXTURE_2D,
+                this.textures[type][i],
+                0
+              );
+            });
+          });
+        }
+
+        reset() {
+          this.state.time = 0;
+          this.state.phase = "convection"; // TOUJOURS EN CONVECTION
+          this.initializeFields();
+          this.updateStatus();
+          console.log("🔥 Reset avec convection immédiate");
+        }
+
+        initializeFields() {
+          const gl = this.gl;
+
+          // Initialiser température avec une PETITE perturbation pour amorcer
+          const tempData = new Float32Array(this.width * this.height * 4);
+          for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+              const i = y * this.width + x;
+              const px = x / this.width;
+              const py = y / this.height;
+
+              // Température de base uniforme
+              let T = 0.5;
+
+              // PAS de perturbation - laisser la physique pure
+
+              tempData[i * 4] = T;
+              tempData[i * 4 + 1] = 0;
+              tempData[i * 4 + 2] = 0;
+              tempData[i * 4 + 3] = 1;
+            }
+          }
+
+          gl.bindTexture(gl.TEXTURE_2D, this.textures.temperature[0]);
+          gl.texSubImage2D(
+            gl.TEXTURE_2D,
+            0,
+            0,
+            0,
+            this.width,
+            this.height,
+            gl.RGBA,
+            gl.FLOAT,
+            tempData
+          );
+          gl.bindTexture(gl.TEXTURE_2D, this.textures.temperature[1]);
+          gl.texSubImage2D(
+            gl.TEXTURE_2D,
+            0,
+            0,
+            0,
+            this.width,
+            this.height,
+            gl.RGBA,
+            gl.FLOAT,
+            tempData
+          );
+
+          // Initialiser vitesse nulle pour convection latérale propre
+          const velData = new Float32Array(this.width * this.height * 4);
+
+          gl.bindTexture(gl.TEXTURE_2D, this.textures.velocity[0]);
+          gl.texSubImage2D(
+            gl.TEXTURE_2D,
+            0,
+            0,
+            0,
+            this.width,
+            this.height,
+            gl.RGBA,
+            gl.FLOAT,
+            velData
+          );
+          gl.bindTexture(gl.TEXTURE_2D, this.textures.velocity[1]);
+          gl.texSubImage2D(
+            gl.TEXTURE_2D,
+            0,
+            0,
+            0,
+            this.width,
+            this.height,
+            gl.RGBA,
+            gl.FLOAT,
+            velData
+          );
+
+          // Initialiser pression nulle
+          gl.bindTexture(gl.TEXTURE_2D, this.textures.pressure[0]);
+          gl.texSubImage2D(
+            gl.TEXTURE_2D,
+            0,
+            0,
+            0,
+            this.width,
+            this.height,
+            gl.RGBA,
+            gl.FLOAT,
+            velData
+          );
+          gl.bindTexture(gl.TEXTURE_2D, this.textures.pressure[1]);
+          gl.texSubImage2D(
+            gl.TEXTURE_2D,
+            0,
+            0,
+            0,
+            this.width,
+            this.height,
+            gl.RGBA,
+            gl.FLOAT,
+            velData
+          );
+        }
+
+        step() {
+          const gl = this.gl;
+          const curr = this.currentTexture;
+          const next = 1 - curr;
+
+          gl.viewport(0, 0, this.width, this.height);
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+
+          // 1. Diffusion thermique
+          gl.useProgram(this.programs.thermalDiffusion);
+          gl.bindFramebuffer(
+            gl.FRAMEBUFFER,
+            this.framebuffers.temperature[next]
+          );
+
+          const tempLoc = gl.getAttribLocation(
+            this.programs.thermalDiffusion,
+            "a_position"
+          );
+          gl.enableVertexAttribArray(tempLoc);
+          gl.vertexAttribPointer(tempLoc, 2, gl.FLOAT, false, 0, 0);
+
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, this.textures.temperature[curr]);
+          gl.uniform1i(
+            gl.getUniformLocation(
+              this.programs.thermalDiffusion,
+              "u_temperature"
+            ),
+            0
+          );
+
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, this.textures.velocity[curr]);
+          gl.uniform1i(
+            gl.getUniformLocation(this.programs.thermalDiffusion, "u_velocity"),
+            1
+          );
+
+          gl.uniform2f(
+            gl.getUniformLocation(
+              this.programs.thermalDiffusion,
+              "u_resolution"
+            ),
+            this.width,
+            this.height
+          );
+          gl.uniform1f(
+            gl.getUniformLocation(this.programs.thermalDiffusion, "u_dt"),
+            this.params.dt
+          );
+          gl.uniform1f(
+            gl.getUniformLocation(this.programs.thermalDiffusion, "u_phase"),
+            this.state.phase === "convection" ? 1.0 : 0.0
+          );
+
+          gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+          // 2. Vitesse (TOUJOURS calculée)
+          {
+            gl.useProgram(this.programs.velocity);
+            gl.bindFramebuffer(
+              gl.FRAMEBUFFER,
+              this.framebuffers.velocity[next]
+            );
+
+            const velLoc = gl.getAttribLocation(
+              this.programs.velocity,
+              "a_position"
+            );
+            gl.enableVertexAttribArray(velLoc);
+            gl.vertexAttribPointer(velLoc, 2, gl.FLOAT, false, 0, 0);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, this.textures.velocity[curr]);
+            gl.uniform1i(
+              gl.getUniformLocation(this.programs.velocity, "u_velocity"),
+              0
+            );
+
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, this.textures.temperature[next]);
+            gl.uniform1i(
+              gl.getUniformLocation(this.programs.velocity, "u_temperature"),
+              1
+            );
+
+            gl.activeTexture(gl.TEXTURE2);
+            gl.bindTexture(gl.TEXTURE_2D, this.textures.pressure[curr]);
+            gl.uniform1i(
+              gl.getUniformLocation(this.programs.velocity, "u_pressure"),
+              2
+            );
+
+            gl.uniform2f(
+              gl.getUniformLocation(this.programs.velocity, "u_resolution"),
+              this.width,
+              this.height
+            );
+            gl.uniform1f(
+              gl.getUniformLocation(this.programs.velocity, "u_dt"),
+              this.params.dt
+            );
+            gl.uniform1f(
+              gl.getUniformLocation(this.programs.velocity, "u_grashof"),
+              this.params.grashof
+            );
+            gl.uniform1f(
+              gl.getUniformLocation(this.programs.velocity, "u_prandtl"),
+              this.params.prandtl
+            );
+            gl.uniform1f(
+              gl.getUniformLocation(this.programs.velocity, "u_phase"),
+              1.0
+            );
+
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+            // 3. Projection SIMPLIFIÉE - 1 seule itération
+            for (let i = 0; i < 1; i++) {
+              gl.useProgram(this.programs.projection);
+              gl.bindFramebuffer(
+                gl.FRAMEBUFFER,
+                this.framebuffers.pressure[next]
+              );
+
+              const projLoc = gl.getAttribLocation(
+                this.programs.projection,
+                "a_position"
+              );
+              gl.enableVertexAttribArray(projLoc);
+              gl.vertexAttribPointer(projLoc, 2, gl.FLOAT, false, 0, 0);
+
+              gl.activeTexture(gl.TEXTURE0);
+              gl.bindTexture(gl.TEXTURE_2D, this.textures.velocity[next]);
+              gl.uniform1i(
+                gl.getUniformLocation(this.programs.projection, "u_velocity"),
+                0
+              );
+
+              gl.activeTexture(gl.TEXTURE1);
+              gl.bindTexture(gl.TEXTURE_2D, this.textures.pressure[curr]);
+              gl.uniform1i(
+                gl.getUniformLocation(this.programs.projection, "u_pressure"),
+                1
+              );
+
+              gl.uniform2f(
+                gl.getUniformLocation(this.programs.projection, "u_resolution"),
+                this.width,
+                this.height
+              );
+              gl.uniform1f(
+                gl.getUniformLocation(this.programs.projection, "u_dt"),
+                this.params.dt
+              );
+
+              gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+              // Swap pour itérations Jacobi
+              const temp = this.textures.pressure[curr];
+              this.textures.pressure[curr] = this.textures.pressure[next];
+              this.textures.pressure[next] = temp;
+
+              const tempFb = this.framebuffers.pressure[curr];
+              this.framebuffers.pressure[curr] =
+                this.framebuffers.pressure[next];
+              this.framebuffers.pressure[next] = tempFb;
+            }
+          }
+
+          // 4. CORRECTION DE VITESSE - ÉTAPE CRUCIALE pour méthode de projection
+          gl.useProgram(this.programs.velocityCorrection);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers.velocity[curr]);
+
+          const correctionLoc = gl.getAttribLocation(
+            this.programs.velocityCorrection,
+            "a_position"
+          );
+          gl.enableVertexAttribArray(correctionLoc);
+          gl.vertexAttribPointer(correctionLoc, 2, gl.FLOAT, false, 0, 0);
+
+          // Vitesses à corriger (vitesses intermédiaires v*)
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, this.textures.velocity[next]);
+          gl.uniform1i(
+            gl.getUniformLocation(
+              this.programs.velocityCorrection,
+              "u_velocity"
+            ),
+            0
+          );
+
+          // Champ de pression pour correction
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, this.textures.pressure[curr]);
+          gl.uniform1i(
+            gl.getUniformLocation(
+              this.programs.velocityCorrection,
+              "u_pressure"
+            ),
+            1
+          );
+
+          gl.uniform2f(
+            gl.getUniformLocation(
+              this.programs.velocityCorrection,
+              "u_resolution"
+            ),
+            this.width,
+            this.height
+          );
+
+          gl.uniform1f(
+            gl.getUniformLocation(this.programs.velocityCorrection, "u_dt"),
+            this.params.dt
+          );
+
+          gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+          // Swap final pour vitesses corrigées
+          const tempVel = this.textures.velocity[curr];
+          this.textures.velocity[curr] = this.textures.velocity[next];
+          this.textures.velocity[next] = tempVel;
+
+          this.currentTexture = next;
+          this.state.time += this.params.dt;
+
+          if (
+            this.state.phase === "diffusion" &&
+            this.state.time > this.state.diffusionTime
+          ) {
+            this.state.phase = "convection";
+            console.log("🔥 Passage en phase convection");
+          }
+        }
+
+        render() {
+          const gl = this.gl;
+
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+
+          gl.useProgram(this.programs.render);
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+
+          const renderLoc = gl.getAttribLocation(
+            this.programs.render,
+            "a_position"
+          );
+          gl.enableVertexAttribArray(renderLoc);
+          gl.vertexAttribPointer(renderLoc, 2, gl.FLOAT, false, 0, 0);
+
+          let texture;
+          let mode = 0;
+
+          switch (this.state.visualMode) {
+            case "temperature":
+              texture = this.textures.temperature[this.currentTexture];
+              mode = 0;
+              break;
+            case "velocity":
+              texture = this.textures.velocity[this.currentTexture];
+              mode = 1;
+              break;
+            case "buoyancy":
+              texture = this.textures.velocity[this.currentTexture];
+              mode = 2;
+              break;
+            case "tempDebug":
+              texture = this.textures.velocity[this.currentTexture];
+              mode = 3;
+              break;
+            case "pressure":
+              texture = this.textures.pressure[this.currentTexture];
+              mode = 4;
+              break;
+            case "vectors":
+              texture = this.textures.velocity[this.currentTexture];
+              mode = 5;
+              break;
+          }
+
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          gl.uniform1i(
+            gl.getUniformLocation(this.programs.render, "u_texture"),
+            0
+          );
+          gl.uniform1i(
+            gl.getUniformLocation(this.programs.render, "u_mode"),
+            mode
+          );
+
+          gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        }
+
+        addPerturbation(x, y) {
+          console.log(`Perturbation disabled for debug`);
+        }
+
+        setupControls() {
+          // Sliders
+          document
+            .getElementById("grashofSlider")
+            .addEventListener("input", (e) => {
+              this.params.grashof = parseInt(e.target.value);
+              document.getElementById("grashofValue").textContent =
+                this.params.grashof;
+            });
+
+          document
+            .getElementById("prandtlSlider")
+            .addEventListener("input", (e) => {
+              this.params.prandtl = parseFloat(e.target.value);
+              document.getElementById("prandtlValue").textContent =
+                this.params.prandtl;
+            });
+
+          document.getElementById("dtSlider").addEventListener("input", (e) => {
+            this.params.dt = parseFloat(e.target.value);
+            document.getElementById("dtValue").textContent = this.params.dt;
+          });
+
+          document
+            .getElementById("resolutionSlider")
+            .addEventListener("input", (e) => {
+              this.params.resolution = parseInt(e.target.value);
+              this.updateResolution();
+              this.createTextures();
+              this.createFramebuffers();
+              this.reset();
+            });
+
+          // Boutons de visualisation
+          document.getElementById("tempBtn").addEventListener("click", () => {
+            this.setVisualizationMode("temperature");
+          });
+
+          document
+            .getElementById("velocityBtn")
+            .addEventListener("click", () => {
+              this.setVisualizationMode("velocity");
+            });
+
+          document
+            .getElementById("buoyancyBtn")
+            .addEventListener("click", () => {
+              this.setVisualizationMode("buoyancy");
+            });
+
+          document
+            .getElementById("tempDebugBtn")
+            .addEventListener("click", () => {
+              this.setVisualizationMode("tempDebug");
+            });
+
+          document
+            .getElementById("pressureBtn")
+            .addEventListener("click", () => {
+              this.setVisualizationMode("pressure");
+            });
+
+          document
+            .getElementById("vectorsBtn")
+            .addEventListener("click", () => {
+              this.setVisualizationMode("vectors");
+            });
+
+          // Contrôles
+          document.getElementById("startBtn").addEventListener("click", () => {
+            this.state.isRunning = true;
+            this.animate();
+          });
+
+          document.getElementById("pauseBtn").addEventListener("click", () => {
+            this.state.isRunning = false;
+          });
+
+          document.getElementById("resetBtn").addEventListener("click", () => {
+            this.state.isRunning = false;
+            this.reset();
+          });
+
+          document
+            .getElementById("perturbBtn")
+            .addEventListener("click", () => {
+              console.log("Perturbation disabled for debug");
+            });
+        }
+
+        setupMouseEvents() {
+          this.canvas.addEventListener("click", (e) => {
+            console.log("Mouse events disabled for debug");
+          });
+        }
+
+        setVisualizationMode(mode) {
+          this.state.visualMode = mode;
+
+          document.querySelectorAll("#controls button").forEach((btn) => {
+            btn.classList.remove("active");
+          });
+
+          document
+            .getElementById(
+              mode === "temperature"
+                ? "tempBtn"
+                : mode === "velocity"
+                ? "velocityBtn"
+                : mode === "buoyancy"
+                ? "buoyancyBtn"
+                : mode === "tempDebug"
+                ? "tempDebugBtn"
+                : "pressureBtn"
+            )
+            .classList.add("active");
+        }
+
+        updateStatus() {
+          document.getElementById("status").textContent = this.state.isRunning
+            ? "En cours"
+            : "Arrêté";
+          document.getElementById("phase").textContent =
+            this.state.phase === "diffusion" ? "Diffusion" : "Convection";
+          document.getElementById("timeValue").textContent =
+            this.state.time.toFixed(3);
+        }
+
+        animate(currentTime = 0) {
+          if (!this.state.isRunning) return;
+
+          const deltaTime = currentTime - this.lastTime;
+          this.lastTime = currentTime;
+
+          // FPS
+          this.frameCount++;
+          this.fpsTime += deltaTime;
+          if (this.fpsTime >= 1000) {
+            document.getElementById("fps").textContent = Math.round(
+              (this.frameCount * 1000) / this.fpsTime
+            );
+            this.frameCount = 0;
+            this.fpsTime = 0;
+          }
+
+          // Simulation - quelques étapes pour accélérer
+          for (let i = 0; i < 3; i++) {
+            this.step();
+          }
+
+          this.render();
+          this.updateStatus();
+
+          // Debug : Log des paramètres toutes les 2 secondes
+          if (Math.floor(this.state.time * 10) % 20 === 0) {
+            console.log(
+              `🔥 t=${this.state.time.toFixed(2)}, Gr=${
+                this.params.grashof
+              }, dt=${this.params.dt}`
+            );
+          }
+
+          requestAnimationFrame((time) => this.animate(time));
+        }
+      }
+
+      // Initialisation
+      window.addEventListener("load", () => {
+        const simulation = new ConvectionLateraleWebGL();
+
+        console.log("🚀 Simulation WebGL DEBUG");
+        console.log("💡 Perturbations désactivées");
+        console.log("⚡ Pression temporairement désactivée");
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Three.js PBR Material Studio</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+      }
+      #info {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        color: #fff;
+        font-family: sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="info">
+      PBR Material Studio: adjust metalness, roughness, normal map
+    </div>
+    <!-- Three.js core -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- HDR loader must be included before main script -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/RGBELoader.js"></script>
+    <!-- GUI -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.7/dat.gui.min.js"></script>
+    <script>
+      // Scene, camera, renderer
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(
+        45,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        100
+      );
+      camera.position.set(0, 0, 3);
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      // PMREM generator for environment
+      const pmremGenerator = new THREE.PMREMGenerator(renderer);
+      pmremGenerator.compileEquirectangularShader();
+
+      // Load HDR environment map
+      const rgbeLoader = new THREE.RGBELoader();
+      rgbeLoader.setDataType(THREE.UnsignedByteType);
+      rgbeLoader.load(
+        "https://threejs.org/examples/textures/equirectangular/royal_esplanade_1k.hdr",
+        (hdrEquirect) => {
+          const envMap =
+            pmremGenerator.fromEquirectangular(hdrEquirect).texture;
+          scene.environment = envMap;
+          hdrEquirect.dispose();
+          pmremGenerator.dispose();
+          init();
+          animate();
+        },
+        undefined,
+        (err) => console.error("Error loading HDR:", err)
+      );
+
+      let mesh, material;
+      const gui = new dat.GUI();
+
+      function init() {
+        // Geometry + PBR material
+        const geo = new THREE.SphereGeometry(1, 64, 64);
+        material = new THREE.MeshStandardMaterial({
+          metalness: 0.5,
+          roughness: 0.5,
+          envMapIntensity: 1,
+        });
+        mesh = new THREE.Mesh(geo, material);
+        scene.add(mesh);
+
+        // Lights
+        const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.5);
+        scene.add(hemi);
+        const dir = new THREE.DirectionalLight(0xffffff, 1);
+        dir.position.set(5, 10, 7.5);
+        scene.add(dir);
+
+        // Normal map
+        const normalLoader = new THREE.TextureLoader();
+        const normalTexture = normalLoader.load(
+          "https://threejs.org/examples/textures/water/Water_1_M_Normal.jpg",
+          () => {
+            renderer.render(scene, camera);
+          }
+        );
+        normalTexture.wrapS = normalTexture.wrapT = THREE.RepeatWrapping;
+        material.normalMap = normalTexture;
+        material.normalScale.set(1, 1);
+
+        // GUI controls
+        const params = {
+          metalness: material.metalness,
+          roughness: material.roughness,
+          envMapIntensity: material.envMapIntensity,
+          normalScale: 1,
+          showNormalMap: true,
+        };
+        gui
+          .add(params, "metalness", 0, 1)
+          .onChange((v) => (material.metalness = v));
+        gui
+          .add(params, "roughness", 0, 1)
+          .onChange((v) => (material.roughness = v));
+        gui
+          .add(params, "envMapIntensity", 0, 2)
+          .onChange((v) => (material.envMapIntensity = v));
+        gui
+          .add(params, "normalScale", 0, 3)
+          .onChange((v) => material.normalScale.set(v, v));
+        gui.add(params, "showNormalMap").onChange((v) => {
+          material.normalMap = v ? normalTexture : null;
+          material.needsUpdate = true;
+        });
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        mesh.rotation.y += 0.003;
+        renderer.render(scene, camera);
+      }
+
+      window.addEventListener("resize", () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    </script>
+  </body>
+</html>

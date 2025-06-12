@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Simulation de Convection de Rayleigh-Bénard</title>
+    <title>Simulation de Convection en Cavité</title>
     <!-- Tailwind CSS pour un style de base et responsif -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -109,17 +109,17 @@
   </head>
   <body>
     <div class="container">
-      <h1>Simulation de Convection de Rayleigh-Bénard</h1>
+      <h1>Simulation de Convection en Cavité</h1>
       <p>
-        Cette simulation WebGL modélise le phénomène de convection de
-        Rayleigh-Bénard, où un fluide chauffé par le bas et refroidi par le haut
-        développe des motifs de mouvement distincts. Les couleurs chaudes
-        (rouge) représentent des températures élevées, et les couleurs froides
-        (bleu) représentent des températures basses.
+        Cette simulation WebGL modélise le phénomène de convection naturelle
+        dans une cavité chauffée différentiellement. La paroi de gauche est
+        maintenue à une température élevée (rouge), et la paroi de droite à une
+        température basse (bleu). Cela induit un mouvement de rotation du
+        fluide.
         <br />
         <span class="font-bold"
-          >Remarque : Cliquez sur l'image en partie basse pour ajouter un point
-          chaud et enclancher les phénomènes thermo-convectifs</span
+          >Remarque : La résolution de la simulation est élevée (512x512), ce
+          qui peut impacter les performances sur certains appareils.</span
         >
       </p>
       <canvas id="glcanvas"></canvas>
@@ -146,11 +146,11 @@
         // Pas de temps. Une valeur trop élevée rendra la simulation instable.
         DT: 0.0005,
         // Viscosité du fluide (non utilisée directement dans les shaders fournis, mais importante pour la physique)
-        VISCOSITY: 0.001,
+        VISCOSITY: 0.01,
         // Coefficient de dilatation thermique (force de la poussée d'Archimède)
-        ALPHA: 50,
+        ALPHA: 20,
         // Coefficient de diffusion thermique. Crucial pour la dissipation de la chaleur.
-        DIFFUSION_TEMP: 0.001, // Nouvelle valeur pour la diffusion thermique
+        DIFFUSION_TEMP: 0.0005, // Nouvelle valeur pour la diffusion thermique
         // Température initiale du bas de la grille
         INITIAL_TEMP_BOTTOM: 1.0,
         // Température initiale du haut de la grille
@@ -159,8 +159,6 @@
 
       // Variable globale pour le mode de visualisation (0: température, 1: vitesse)
       let currentVisualizationMode = 0;
-      // Variable globale pour stocker la demande de clic
-      let clickRequest = null;
 
       // --- Shaders GLSL ---
 
@@ -258,26 +256,6 @@
             }
         `;
 
-      // Shader pour forcer les conditions aux limites (no-slip) sur le champ de vitesse
-      const boundaryShaderSource = `
-            precision highp float;
-            varying vec2 v_texCoord;
-            uniform sampler2D u_velocity;
-            uniform vec2 u_texelSize;
-
-            void main() {
-                vec2 vel = texture2D(u_velocity, v_texCoord).xy;
-
-                // Si le fragment est sur une bordure, sa vitesse est forcée à zéro.
-                if (v_texCoord.x < u_texelSize.x || v_texCoord.x > 1.0 - u_texelSize.x ||
-                    v_texCoord.y < u_texelSize.y || v_texCoord.y > 1.0 - u_texelSize.y) {
-                    vel = vec2(0.0, 0.0);
-                }
-                
-                gl_FragColor = vec4(vel, 0.0, 1.0);
-            }
-        `;
-
       // Shader pour soustraire le gradient de pression du champ de vitesse
       const gradientSubtractShaderSource = `
             precision highp float;
@@ -329,40 +307,23 @@
                 float T = texture2D(u_source, v_texCoord + vec2(0.0, u_texelSize.y)).r; // Haut
 
                 // Calcule le Laplacien (approximation par différences finies)
+                // C'est la somme des différences de température avec les voisins, moins 4 fois la température centrale
                 float laplacian = (L + R + B + T - 4.0 * C);
 
                 // Applique la diffusion: T_new = T_old + dt * D * ∇²T
+                // Le terme (1.0 / (u_texelSize.x * u_texelSize.x)) est important pour la discrétisation spatiale
+                // Il est souvent incorporé dans le coefficient de diffusion ou dans le Laplacien calculé.
+                // Ici, nous multiplions le Laplacien par (1.0 / (u_texelSize.x * u_texelSize.x)) pour ajuster
+                // la magnitude du Laplacien au pas de grille.
                 float newTemp = C + u_dt * u_diffusionCoefficient * laplacian / (u_texelSize.x * u_texelSize.x);
                 
-                // Conditions aux limites spécifiques pour la température : les bords supérieur et inférieur sont fixes.
-                if (v_texCoord.y < u_texelSize.y || v_texCoord.y > (1.0 - u_texelSize.y)) {
-                    gl_FragColor = texture2D(u_source, v_texCoord); // Ne pas appliquer la diffusion sur les bords
+                // Conditions aux limites pour une cavité chauffée sur les côtés.
+                // Les parois gauche et droite ont une température fixe.
+                if (v_texCoord.x < u_texelSize.x || v_texCoord.x > (1.0 - u_texelSize.x)) {
+                    gl_FragColor = texture2D(u_source, v_texCoord); // Ne pas appliquer la diffusion sur les bords latéraux
                 } else {
                     gl_FragColor = vec4(newTemp, 0.0, 0.0, 1.0);
                 }
-            }
-        `;
-
-      // Shader pour ajouter un point chaud lors d'un clic
-      const addHeatShaderSource = `
-            precision highp float;
-            varying vec2 v_texCoord;
-            uniform sampler2D u_source;
-            uniform vec2 u_clickPosition; // Position normalisée (0-1)
-            uniform float u_radius;
-            uniform float u_intensity;
-
-            void main() {
-                float currentTemp = texture2D(u_source, v_texCoord).r;
-                float dist = distance(v_texCoord, u_clickPosition);
-                
-                // Utilise smoothstep pour un bel effet de dégradé
-                float heat = u_intensity * smoothstep(u_radius, 0.0, dist);
-                
-                float newTemp = currentTemp + heat;
-                
-                // On s'assure que la température ne devienne pas excessive
-                gl_FragColor = vec4(clamp(newTemp, 0.0, 10.0), 0.0, 0.0, 1.0);
             }
         `;
 
@@ -484,11 +445,6 @@
           vertexShaderSource,
           pressureShaderSource
         );
-        const boundaryProgram = createProgram(
-          gl,
-          vertexShaderSource,
-          boundaryShaderSource
-        );
         const gradientSubtractProgram = createProgram(
           gl,
           vertexShaderSource,
@@ -498,32 +454,12 @@
           gl,
           vertexShaderSource,
           diffusionShaderSource
-        );
+        ); // Nouveau programme de diffusion
         const visualizeProgram = createProgram(
           gl,
           vertexShaderSource,
           visualizeShaderSource
         );
-        const addHeatProgram = createProgram(
-          gl,
-          vertexShaderSource,
-          addHeatShaderSource
-        );
-
-        // Écouteur d'événement pour le clic de souris sur le canvas
-        canvas.addEventListener("mousedown", (e) => {
-          const rect = canvas.getBoundingClientRect();
-          const x = (e.clientX - rect.left) / canvas.clientWidth;
-          // On inverse l'axe Y pour correspondre aux coordonnées de texture de WebGL
-          const y = 1.0 - (e.clientY - rect.top) / canvas.clientHeight;
-
-          clickRequest = {
-            position: [x, y],
-            radius: 0.05, // Rayon du point chaud (en coordonnées normalisées)
-            intensity: 8.0, // Intensité de la chaleur ajoutée
-          };
-          console.log("Clic détecté, ajout d'un point chaud en", x, y);
-        });
 
         // Un simple quad qui remplit l'écran
         const quadBuffer = gl.createBuffer();
@@ -581,17 +517,16 @@
               const index = (j * config.SIM_RESOLUTION + i) * 4;
               let temp;
 
-              // --- Conditions aux limites (les "plaques") ---
-              if (j === 0) {
-                // Bordure du bas : toujours chaude
+              // --- Conditions aux limites pour une cavité chauffée sur les côtés ---
+              if (i === 0) {
+                // Paroi de gauche : chaude
                 temp = config.INITIAL_TEMP_BOTTOM;
-              } else if (j === config.SIM_RESOLUTION - 1) {
-                // Bordure du haut : toujours froide
+              } else if (i === config.SIM_RESOLUTION - 1) {
+                // Paroi de droite : froide
                 temp = config.INITIAL_TEMP_TOP;
               } else {
                 // --- Condition initiale du fluide à l'intérieur ---
-                // Température moyenne homogène avec un bruit aléatoire pour briser la symétrie.
-                // Ce bruit est crucial pour que les instabilités se développent et forment les cellules de convection.
+                // Température moyenne homogène avec un bruit aléatoire.
                 const noise = (Math.random() - 0.5) * 0.01; // Bruit pour perturber l'équilibre
                 temp = avgTemp + noise;
               }
@@ -671,22 +606,6 @@
           gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
           velocity.swap();
 
-          // --- Étape 3.2: Application des conditions aux limites (NOUVEAU) ---
-          // On s'assure que la vitesse est nulle aux parois AVANT de calculer la divergence
-          // C'est l'étape clé pour une bonne conservation de la masse.
-          gl.useProgram(boundaryProgram);
-          gl.uniform2f(
-            gl.getUniformLocation(boundaryProgram, "u_texelSize"),
-            texelSize.x,
-            texelSize.y
-          );
-          gl.uniform1i(gl.getUniformLocation(boundaryProgram, "u_velocity"), 0);
-          bindFBO(gl, velocity.write.fbo, quadBuffer, boundaryProgram);
-          gl.activeTexture(gl.TEXTURE0);
-          gl.bindTexture(gl.TEXTURE_2D, velocity.read.texture);
-          gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-          velocity.swap();
-
           // --- Étape 3.5: Diffusion de la température (NOUVEAU) ---
           gl.useProgram(diffusionProgram);
           gl.uniform2f(
@@ -708,32 +627,6 @@
           gl.bindTexture(gl.TEXTURE_2D, temperature.read.texture);
           gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
           temperature.swap();
-
-          // --- Étape 3.7: Ajout de chaleur par clic (NOUVEAU) ---
-          if (clickRequest) {
-            gl.useProgram(addHeatProgram);
-            gl.uniform2fv(
-              gl.getUniformLocation(addHeatProgram, "u_clickPosition"),
-              clickRequest.position
-            );
-            gl.uniform1f(
-              gl.getUniformLocation(addHeatProgram, "u_radius"),
-              clickRequest.radius
-            );
-            gl.uniform1f(
-              gl.getUniformLocation(addHeatProgram, "u_intensity"),
-              clickRequest.intensity
-            );
-            gl.uniform1i(gl.getUniformLocation(addHeatProgram, "u_source"), 0);
-
-            bindFBO(gl, temperature.write.fbo, quadBuffer, addHeatProgram);
-            gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, temperature.read.texture);
-            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-            temperature.swap();
-
-            clickRequest = null; // On consomme la demande de clic
-          }
 
           // --- Étape 4: Calcul de la divergence ---
           gl.useProgram(divergenceProgram);

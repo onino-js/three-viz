@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simulation d'Instabilité de Kelvin-Helmholtz</title>
+    <!-- Tailwind CSS pour un style de base et responsif -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap");
+      body {
+        font-family: "Inter", sans-serif;
+        background-color: #f0f0f0; /* Fond clair */
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        margin: 0;
+        padding: 20px;
+        box-sizing: border-box;
+        overflow: hidden; /* Empêche le défilement si le canvas est plus grand */
+      }
+      .container {
+        background-color: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+        max-width: 900px; /* Largeur maximale pour le contenu */
+        width: 100%;
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+      }
+      canvas {
+        display: block;
+        width: 100%; /* Le canvas prend toute la largeur disponible du conteneur */
+        max-width: 800px; /* Limite la taille maximale du canvas */
+        height: auto; /* Maintient le ratio d'aspect */
+        aspect-ratio: 2 / 1; /* Ratio pour un format plus large */
+        background-color: #000; /* Fond noir pour la simulation */
+        border-radius: 8px;
+        box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.2);
+      }
+      h1 {
+        color: #333;
+        font-size: 1.8rem;
+        margin-bottom: 10px;
+      }
+      p {
+        color: #666;
+        font-size: 0.95rem;
+        line-height: 1.5;
+      }
+      .error-message {
+        color: #d32f2f;
+        background-color: #ffebee;
+        border: 1px solid #ef9a9a;
+        padding: 10px 15px;
+        border-radius: 6px;
+        margin-top: 15px;
+        font-weight: bold;
+      }
+      .controls {
+        margin-top: 15px;
+      }
+      .controls button {
+        cursor: pointer;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-weight: bold;
+        transition: all 0.2s ease-in-out;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        background-color: #4caf50; /* Green */
+        color: white;
+        margin: 5px;
+      }
+      .controls button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+      }
+      #showTempBtn {
+        background-color: #3b82f6; /* Blue */
+      }
+      #showTempBtn:hover {
+        background-color: #2563eb;
+      }
+      #showSpeedBtn {
+        background-color: #10b981; /* Green */
+      }
+      #showSpeedBtn:hover {
+        background-color: #059669;
+      }
+      @media (max-width: 640px) {
+        h1 {
+          font-size: 1.5rem;
+        }
+        .container {
+          padding: 15px;
+        }
+        .controls button {
+          padding: 8px 15px;
+          font-size: 0.9rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Simulation d'Instabilité de Kelvin-Helmholtz</h1>
+      <p>
+        Cette simulation WebGL modélise l'instabilité de Kelvin-Helmholtz. Elle
+        apparaît à l'interface de deux fluides qui cisaillent l'un contre
+        l'autre. La différence de vitesse crée des tourbillons caractéristiques
+        qui grandissent et se mélangent. La température est ici utilisée comme
+        un marqueur passif pour visualiser les deux fluides.
+      </p>
+      <canvas id="glcanvas"></canvas>
+      <div class="controls flex flex-wrap justify-center gap-4 mt-4">
+        <button id="showTempBtn">Visualiser le mélange</button>
+        <button id="showSpeedBtn">Visualiser la Vitesse</button>
+      </div>
+      <div id="statusMessage" class="error-message hidden"></div>
+    </div>
+
+    <script>
+      "use strict";
+
+      // --- Configuration de la simulation ---
+      const config = {
+        SIM_RESOLUTION_X: 1024,
+        SIM_RESOLUTION_Y: 512,
+        PRESSURE_ITERATIONS: 20,
+        DT: 0.002,
+        VISCOSITY: 0.05,
+      };
+
+      let currentVisualizationMode = 0;
+
+      // --- Shaders GLSL ---
+      const vertexShaderSource = `
+            attribute vec2 a_position;
+            varying vec2 v_texCoord;
+            void main() {
+                v_texCoord = a_position * 0.5 + 0.5;
+                gl_Position = vec4(a_position, 0.0, 1.0);
+            }
+        `;
+
+      const advectionShaderSource = `
+            precision highp float;
+            varying vec2 v_texCoord;
+            uniform sampler2D u_velocity;
+            uniform sampler2D u_source;
+            uniform vec2 u_texelSize;
+            uniform float u_dt;
+            
+            void main() {
+                vec2 velocity = texture2D(u_velocity, v_texCoord).xy;
+                // Advection périodique sur l'axe X, et clamp sur Y
+                vec2 coord = v_texCoord - u_dt * velocity * u_texelSize;
+                coord.x = fract(coord.x); 
+                gl_FragColor = texture2D(u_source, coord);
+            }
+        `;
+
+      const divergenceShaderSource = `
+            precision highp float;
+            varying vec2 v_texCoord;
+            uniform sampler2D u_velocity;
+            uniform vec2 u_texelSize;
+
+            void main() {
+                float L = texture2D(u_velocity, fract(v_texCoord - vec2(u_texelSize.x, 0.0))).x;
+                float R = texture2D(u_velocity, fract(v_texCoord + vec2(u_texelSize.x, 0.0))).x;
+                float B = texture2D(u_velocity, v_texCoord - vec2(0.0, u_texelSize.y)).y;
+                float T = texture2D(u_velocity, v_texCoord + vec2(0.0, u_texelSize.y)).y;
+                
+                vec2 vel = texture2D(u_velocity, v_texCoord).xy;
+                // Correction pour les bords sup/inf (slip walls)
+                if (v_texCoord.y < u_texelSize.y * 1.5) B = -vel.y;
+                if (v_texCoord.y > 1.0 - u_texelSize.y * 1.5) T = -vel.y;
+
+                gl_FragColor = vec4(0.5 * (R - L + T - B), 0.0, 0.0, 1.0);
+            }
+        `;
+
+      const pressureShaderSource = `
+            precision highp float;
+            varying vec2 v_texCoord;
+            uniform sampler2D u_pressure;
+            uniform sampler2D u_divergence;
+            uniform vec2 u_texelSize;
+
+            void main() {
+                float L = texture2D(u_pressure, fract(v_texCoord - vec2(u_texelSize.x, 0.0))).r;
+                float R = texture2D(u_pressure, fract(v_texCoord + vec2(u_texelSize.x, 0.0))).r;
+                float B = texture2D(u_pressure, v_texCoord - vec2(0.0, u_texelSize.y)).r;
+                float T = texture2D(u_pressure, v_texCoord + vec2(0.0, u_texelSize.y)).r;
+                float div = texture2D(u_divergence, v_texCoord).r;
+
+                // Condition de Neumann (gradient nul) pour la pression aux bords sup/inf
+                if (v_texCoord.y < u_texelSize.y * 1.5) B = T;
+                if (v_texCoord.y > 1.0 - u_texelSize.y * 1.5) T = B;
+
+                float newPressure = (L + R + B + T - div) * 0.25;
+                gl_FragColor = vec4(newPressure, 0.0, 0.0, 1.0);
+            }
+        `;
+
+      const gradientSubtractShaderSource = `
+            precision highp float;
+            varying vec2 v_texCoord;
+            uniform sampler2D u_pressure;
+            uniform sampler2D u_velocity;
+            uniform vec2 u_texelSize;
+
+            void main() {
+                float L = texture2D(u_pressure, fract(v_texCoord - vec2(u_texelSize.x, 0.0))).r;
+                float R = texture2D(u_pressure, fract(v_texCoord + vec2(u_texelSize.x, 0.0))).r;
+                float B = texture2D(u_pressure, v_texCoord - vec2(0.0, u_texelSize.y)).r;
+                float T = texture2D(u_pressure, v_texCoord + vec2(0.0, u_texelSize.y)).r;
+                
+                vec2 gradient = 0.5 * vec2(R - L, T - B);
+                vec2 velocity = texture2D(u_velocity, v_texCoord).xy;
+                
+                vec2 new_velocity = velocity - gradient;
+
+                // Conditions de "Slip" (glissement) sur les parois sup/inf
+                if (v_texCoord.y < u_texelSize.y * 1.5 || v_texCoord.y > 1.0 - u_texelSize.y * 1.5) {
+                    new_velocity.y = 0.0;
+                }
+
+                gl_FragColor = vec4(new_velocity, 0.0, 1.0);
+            }
+        `;
+
+      const visualizeShaderSource = `
+            precision highp float;
+            varying vec2 v_texCoord;
+            uniform sampler2D u_temperatureSource;
+            uniform sampler2D u_velocitySource;
+            uniform int u_visualizationMode;
+
+            vec3 colormapTemp(float t) {
+                t = clamp(t, 0.0, 1.0);
+                return vec3(t, 0.1, 1.0 - t);
+            }
+
+            vec3 colormapSpeed(float s) {
+                s = clamp(s, 0.0, 1.0);
+                return vec3(s, s * 0.5, 0.0);
+            }
+
+            void main() {
+                if (u_visualizationMode == 0) {
+                    float val = texture2D(u_temperatureSource, v_texCoord).r;
+                    gl_FragColor = vec4(colormapTemp(val), 1.0);
+                } else {
+                    vec2 vel = texture2D(u_velocitySource, v_texCoord).xy;
+                    float speed = length(vel);
+                    float normalizedSpeed = speed / 150.0; // Normalisation
+                    gl_FragColor = vec4(colormapSpeed(normalizedSpeed), 1.0);
+                }
+            }
+        `;
+
+      // --- Point d'entrée ---
+      window.onload = main;
+
+      function main() {
+        const canvas = document.getElementById("glcanvas");
+        const gl = canvas.getContext("webgl");
+        if (!gl || !gl.getExtension("OES_texture_float")) {
+          document.getElementById("statusMessage").textContent =
+            "WebGL ou les textures flottantes ne sont pas supportés.";
+          document.getElementById("statusMessage").classList.remove("hidden");
+          return;
+        }
+
+        const advectionProgram = createProgram(
+          gl,
+          vertexShaderSource,
+          advectionShaderSource
+        );
+        const divergenceProgram = createProgram(
+          gl,
+          vertexShaderSource,
+          divergenceShaderSource
+        );
+        const pressureProgram = createProgram(
+          gl,
+          vertexShaderSource,
+          pressureShaderSource
+        );
+        const gradientSubtractProgram = createProgram(
+          gl,
+          vertexShaderSource,
+          gradientSubtractShaderSource
+        );
+        const visualizeProgram = createProgram(
+          gl,
+          vertexShaderSource,
+          visualizeShaderSource
+        );
+
+        const quadBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+        gl.bufferData(
+          gl.ARRAY_BUFFER,
+          new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+          gl.STATIC_DRAW
+        );
+
+        const texelSize = {
+          x: 1.0 / config.SIM_RESOLUTION_X,
+          y: 1.0 / config.SIM_RESOLUTION_Y,
+        };
+
+        let velocity = createDoubleFBO(
+          gl,
+          config.SIM_RESOLUTION_X,
+          config.SIM_RESOLUTION_Y,
+          getInitialVelocity()
+        );
+        let tracer = createDoubleFBO(
+          gl,
+          config.SIM_RESOLUTION_X,
+          config.SIM_RESOLUTION_Y,
+          getInitialTracer()
+        );
+        let pressure = createDoubleFBO(
+          gl,
+          config.SIM_RESOLUTION_X,
+          config.SIM_RESOLUTION_Y,
+          null
+        );
+        const divergence = createFBO(
+          gl,
+          config.SIM_RESOLUTION_X,
+          config.SIM_RESOLUTION_Y,
+          null
+        );
+
+        function getInitialVelocity() {
+          const data = new Float32Array(
+            config.SIM_RESOLUTION_X * config.SIM_RESOLUTION_Y * 4
+          );
+          for (let j = 0; j < config.SIM_RESOLUTION_Y; j++) {
+            for (let i = 0; i < config.SIM_RESOLUTION_X; i++) {
+              const index = (j * config.SIM_RESOLUTION_X + i) * 4;
+              const y = j / (config.SIM_RESOLUTION_Y - 1.0);
+              const x = i / (config.SIM_RESOLUTION_X - 1.0);
+
+              // Vitesse de base
+              let u = y > 0.5 ? 100.0 : -100.0;
+              let v = 0.0;
+
+              // Perturbation sinusoïdale à l'interface
+              if (Math.abs(y - 0.5) < 0.05) {
+                v = 15.0 * Math.sin(x * 2.0 * Math.PI * 4.0); // 4 vagues
+              }
+
+              data[index] = u;
+              data[index + 1] = v;
+            }
+          }
+          return data;
+        }
+
+        function getInitialTracer() {
+          const data = new Float32Array(
+            config.SIM_RESOLUTION_X * config.SIM_RESOLUTION_Y * 4
+          );
+          for (let j = 0; j < config.SIM_RESOLUTION_Y; j++) {
+            for (let i = 0; i < config.SIM_RESOLUTION_X; i++) {
+              const index = (j * config.SIM_RESOLUTION_X + i) * 4;
+              const y = j / (config.SIM_RESOLUTION_Y - 1.0);
+              data[index] = y > 0.5 ? 1.0 : 0.0;
+            }
+          }
+          return data;
+        }
+
+        function update() {
+          gl.viewport(0, 0, config.SIM_RESOLUTION_X, config.SIM_RESOLUTION_Y);
+
+          // 1. Advecter la vitesse
+          runProgram(advectionProgram, velocity.write.fbo, {
+            u_velocity: velocity.read.texture,
+            u_source: velocity.read.texture,
+          });
+          velocity.swap();
+
+          // 2. Advecter le traceur
+          runProgram(advectionProgram, tracer.write.fbo, {
+            u_velocity: velocity.read.texture,
+            u_source: tracer.read.texture,
+          });
+          tracer.swap();
+
+          // 3. Calculer la divergence
+          runProgram(divergenceProgram, divergence.fbo, {
+            u_velocity: velocity.read.texture,
+          });
+
+          // 4. Résoudre la pression
+          gl.useProgram(pressureProgram);
+          gl.uniform1i(
+            gl.getUniformLocation(pressureProgram, "u_divergence"),
+            1
+          );
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, divergence.texture);
+          for (let i = 0; i < config.PRESSURE_ITERATIONS; i++) {
+            runProgram(pressureProgram, pressure.write.fbo, {
+              u_pressure: pressure.read.texture,
+            });
+            pressure.swap();
+          }
+
+          // 5. Soustraire le gradient de pression
+          runProgram(gradientSubtractProgram, velocity.write.fbo, {
+            u_pressure: pressure.read.texture,
+            u_velocity: velocity.read.texture,
+          });
+          velocity.swap();
+
+          // 6. Visualisation
+          gl.useProgram(visualizeProgram);
+          gl.uniform1i(
+            gl.getUniformLocation(visualizeProgram, "u_visualizationMode"),
+            currentVisualizationMode
+          );
+          bindFBO(gl, null);
+          gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, tracer.read.texture);
+          gl.uniform1i(
+            gl.getUniformLocation(visualizeProgram, "u_temperatureSource"),
+            0
+          );
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, velocity.read.texture);
+          gl.uniform1i(
+            gl.getUniformLocation(visualizeProgram, "u_velocitySource"),
+            1
+          );
+          gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+          requestAnimationFrame(update);
+        }
+
+        function runProgram(program, fbo, textures) {
+          bindFBO(gl, fbo);
+          gl.useProgram(program);
+          gl.uniform1f(gl.getUniformLocation(program, "u_dt"), config.DT);
+          gl.uniform2f(
+            gl.getUniformLocation(program, "u_texelSize"),
+            texelSize.x,
+            texelSize.y
+          );
+          let textureUnit = 0;
+          for (const name in textures) {
+            gl.activeTexture(gl.TEXTURE0 + textureUnit);
+            gl.bindTexture(gl.TEXTURE_2D, textures[name]);
+            gl.uniform1i(gl.getUniformLocation(program, name), textureUnit);
+            textureUnit++;
+          }
+          gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        }
+
+        update();
+
+        document.getElementById("showTempBtn").addEventListener("click", () => {
+          currentVisualizationMode = 0;
+        });
+        document
+          .getElementById("showSpeedBtn")
+          .addEventListener("click", () => {
+            currentVisualizationMode = 1;
+          });
+
+        function createProgram(gl, vs, fs) {
+          /* ... implementation ... */
+        }
+        function createFBO(gl, w, h, data) {
+          /* ... implementation ... */
+        }
+        function createDoubleFBO(gl, w, h, data) {
+          /* ... implementation ... */
+        }
+        function createTexture(gl, w, h, data) {
+          /* ... implementation ... */
+        }
+        function bindFBO(gl, fbo) {
+          /* ... implementation ... */
+        }
+
+        function createProgram(gl, vertexSource, fragmentSource) {
+          const program = gl.createProgram();
+          const vShader = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
+          const fShader = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+          gl.attachShader(program, vShader);
+          gl.attachShader(program, fShader);
+          gl.linkProgram(program);
+          if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            console.error("Linker error: ", gl.getProgramInfoLog(program));
+            return null;
+          }
+          return program;
+        }
+
+        function compileShader(gl, type, source) {
+          const shader = gl.createShader(type);
+          gl.shaderSource(shader, source);
+          gl.compileShader(shader);
+          if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            console.error(
+              `Shader compile error (${
+                type === gl.VERTEX_SHADER ? "VS" : "FS"
+              }): `,
+              gl.getShaderInfoLog(shader)
+            );
+            return null;
+          }
+          return shader;
+        }
+
+        function createFBO(gl, width, height, data) {
+          const fbo = gl.createFramebuffer();
+          gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+          const texture = createTexture(gl, width, height, data);
+          gl.framebufferTexture2D(
+            gl.FRAMEBUFFER,
+            gl.COLOR_ATTACHMENT0,
+            gl.TEXTURE_2D,
+            texture,
+            0
+          );
+          if (
+            gl.checkFramebufferStatus(gl.FRAMEBUFFER) !==
+            gl.FRAMEBUFFER_COMPLETE
+          ) {
+            console.error("Framebuffer error");
+          }
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          return { fbo, texture };
+        }
+
+        function createDoubleFBO(gl, width, height, data) {
+          let fbo1 = createFBO(gl, width, height, data);
+          let fbo2 = createFBO(gl, width, height, null);
+          return {
+            read: fbo1,
+            write: fbo2,
+            swap: function () {
+              [this.read, this.write] = [this.write, this.read];
+            },
+          };
+        }
+
+        function createTexture(gl, width, height, data) {
+          const texture = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); // Périodique en X
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); // Clamp en Y
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          // Activer l'extension pour le filtrage linéaire des textures flottantes
+          gl.getExtension("OES_texture_float_linear");
+          gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGBA,
+            width,
+            height,
+            0,
+            gl.RGBA,
+            gl.FLOAT,
+            data
+          );
+          return texture;
+        }
+
+        function bindFBO(gl, fbo) {
+          gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+          const positionLocation = gl.getAttribLocation(
+            advectionProgram,
+            "a_position"
+          ); // Utilise un programme connu
+          gl.enableVertexAttribArray(positionLocation);
+          gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+          gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+        }
+      }
+    </script>
+  </body>
+</html>
