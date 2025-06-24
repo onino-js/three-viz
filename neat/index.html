@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Visualiseur NEAT pour XOR</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding: 20px;
+        background-color: #f0f2f5;
+        gap: 20px;
+      }
+      #main-container {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        padding: 20px;
+        background-color: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      }
+      canvas {
+        border: 1px solid #ccc;
+        background-color: #fff;
+        border-radius: 4px;
+      }
+      #controls,
+      #info,
+      #xor-test,
+      #settings {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      button {
+        padding: 10px 15px;
+        border: none;
+        border-radius: 5px;
+        background-color: #007bff;
+        color: white;
+        font-size: 16px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+      }
+      button:hover {
+        background-color: #0056b3;
+      }
+      button:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+      h2,
+      h3 {
+        margin: 0;
+        color: #333;
+        border-bottom: 2px solid #007bff;
+        padding-bottom: 5px;
+      }
+      #info span {
+        font-weight: bold;
+        color: #007bff;
+      }
+      #xor-results {
+        font-family: monospace;
+        white-space: pre;
+        background: #e9ecef;
+        padding: 10px;
+        border-radius: 4px;
+      }
+      #settings input {
+        padding: 5px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="main-container">
+      <h2>Visualiseur NEAT</h2>
+      <canvas id="neat-canvas" width="600" height="400"></canvas>
+      <div id="controls">
+        <h3>Contrôles</h3>
+        <button id="start-btn">Démarrer</button>
+        <button id="stop-btn" disabled>Arrêter</button>
+        <button id="reset-btn">Réinitialiser</button>
+      </div>
+    </div>
+
+    <div id="main-container">
+      <div id="info">
+        <h2>Informations</h2>
+        <p>Génération: <span id="generation-info">0</span></p>
+        <p>Meilleure Fitness: <span id="fitness-info">N/A</span></p>
+        <p>
+          Nœuds: <span id="nodes-info">0</span> | Connexions:
+          <span id="connections-info">0</span>
+        </p>
+      </div>
+      <div id="settings">
+        <h3>Paramètres</h3>
+        <label for="max-nodes-input">Max Neurones:</label>
+        <input type="number" id="max-nodes-input" value="6" min="3" />
+      </div>
+      <div id="xor-test">
+        <h3>Test du meilleur réseau (XOR)</h3>
+        <div id="xor-results">En attente de la simulation...</div>
+      </div>
+    </div>
+
+    <script src="neat.js"></script>
+    <script src="visualizer.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

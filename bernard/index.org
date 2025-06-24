@@ -38,6 +38,7 @@
         width: 100%; /* Le canvas prend toute la largeur disponible du conteneur */
         max-width: 800px; /* Limite la taille maximale du canvas */
         height: auto; /* Maintient le ratio d'aspect */
+        aspect-ratio: 1 / 1; /* Assure que le canvas est carré */
         background-color: #000; /* Fond noir pour la simulation */
         border-radius: 8px;
         box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.2);
@@ -117,56 +118,14 @@
         (bleu) représentent des températures basses.
         <br />
         <span class="font-bold"
-          >Remarque : Cliquez sur l'image pour ajouter un point chaud et
-          perturber l'écoulement.</span
+          >Remarque : Cliquez sur l'image en partie basse pour ajouter un point
+          chaud et enclancher les phénomènes thermo-convectifs</span
         >
       </p>
       <canvas id="glcanvas"></canvas>
       <div class="controls flex flex-wrap justify-center gap-4 mt-4">
         <button id="showTempBtn">Visualiser Température</button>
         <button id="showSpeedBtn">Visualiser Vitesse</button>
-      </div>
-      <div
-        class="w-full max-w-lg mx-auto grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 p-4 border rounded-lg bg-gray-50 text-gray-700"
-      >
-        <div>
-          <label for="simWidth" class="block text-sm font-medium"
-            >Largeur de simulation</label
-          >
-          <input
-            type="range"
-            id="simWidth"
-            min="128"
-            max="1024"
-            step="16"
-            value="512"
-            class="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer"
-          />
-          <span id="simWidthValue" class="text-sm">512px</span>
-        </div>
-        <div>
-          <label for="simHeight" class="block text-sm font-medium"
-            >Hauteur de simulation</label
-          >
-          <input
-            type="range"
-            id="simHeight"
-            min="128"
-            max="1024"
-            step="16"
-            value="512"
-            class="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer"
-          />
-          <span id="simHeightValue" class="text-sm">512px</span>
-        </div>
-        <div class="md:col-span-2 flex justify-center">
-          <button
-            id="resizeBtn"
-            class="mt-2 px-6 py-2 border border-transparent text-base font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
-            Appliquer & Réinitialiser
-          </button>
-        </div>
       </div>
       <div id="statusMessage" class="error-message hidden"></div>
     </div>
@@ -180,19 +139,18 @@
 
       // --- Configuration de la simulation ---
       const config = {
-        // Résolution de la grille de simulation. Sera mise à jour par les sliders.
-        SIM_RESOLUTION_X: 1024,
-        SIM_RESOLUTION_Y: 512,
+        // Résolution de la grille de simulation. Plus c'est élevé, plus c'est précis mais lent.
+        SIM_RESOLUTION: 512,
         // Nombre d'itérations pour résoudre le champ de pression. Crucial pour la stabilité.
         PRESSURE_ITERATIONS: 30,
         // Pas de temps. Une valeur trop élevée rendra la simulation instable.
-        DT: 0.0004,
+        DT: 0.0005,
         // Viscosité du fluide (non utilisée directement dans les shaders fournis, mais importante pour la physique)
-        VISCOSITY: 0.0001,
+        VISCOSITY: 0.001,
         // Coefficient de dilatation thermique (force de la poussée d'Archimède)
         ALPHA: 50,
         // Coefficient de diffusion thermique. Crucial pour la dissipation de la chaleur.
-        DIFFUSION_TEMP: 0.001,
+        DIFFUSION_TEMP: 0.001, // Nouvelle valeur pour la diffusion thermique
         // Température initiale du bas de la grille
         INITIAL_TEMP_BOTTOM: 1.0,
         // Température initiale du haut de la grille
@@ -203,8 +161,6 @@
       let currentVisualizationMode = 0;
       // Variable globale pour stocker la demande de clic
       let clickRequest = null;
-      // Variable globale pour l'ID de l'animation frame
-      let animationFrameId = null;
 
       // --- Shaders GLSL ---
 
@@ -227,7 +183,7 @@
             uniform sampler2D u_source;
             uniform vec2 u_texelSize;
             uniform float u_dt;
-            uniform vec2 u_simResolution; // Uniforme pour la résolution de la simulation
+            uniform float u_simResolution; // Uniforme pour la résolution de la simulation
 
             void main() {
                 // Calcule la position précédente en remontant le temps avec la vitesse.
@@ -494,25 +450,20 @@
           return;
         }
 
-        // --- Récupération des éléments de l'UI ---
-        const widthSlider = document.getElementById("simWidth");
-        const heightSlider = document.getElementById("simHeight");
-        const widthValueSpan = document.getElementById("simWidthValue");
-        const heightValueSpan = document.getElementById("simHeightValue");
-        const resizeBtn = document.getElementById("resizeBtn");
+        // Pour s'assurer que le canvas est toujours carré et prend la place disponible
+        function resizeCanvas() {
+          const container = canvas.parentElement;
+          const size = Math.min(
+            container.offsetWidth,
+            container.offsetHeight * 0.8
+          ); // Ajustez si nécessaire
+          canvas.width = size;
+          canvas.height = size;
+        }
+        window.addEventListener("resize", resizeCanvas);
+        resizeCanvas(); // Appel initial
 
-        // Mettre à jour les labels et l'aspect-ratio du canvas en temps réel
-        widthSlider.oninput = () => {
-          widthValueSpan.textContent = `${widthSlider.value}px`;
-          canvas.style.aspectRatio = `${widthSlider.value} / ${heightSlider.value}`;
-        };
-        heightSlider.oninput = () => {
-          heightValueSpan.textContent = `${heightSlider.value}px`;
-          canvas.style.aspectRatio = `${widthSlider.value} / ${heightSlider.value}`;
-        };
-        resizeBtn.addEventListener("click", restartSimulation);
-
-        // Création des programmes de shaders une seule fois
+        // Création des programmes de shaders
         const advectionProgram = createProgram(
           gl,
           vertexShaderSource,
@@ -583,93 +534,83 @@
           gl.STATIC_DRAW
         );
 
-        let velocity, temperature, pressure, divergence, texelSize;
+        // La taille d'un texel en coordonnées normalisées (0.0 à 1.0)
+        const texelSize = {
+          x: 1.0 / config.SIM_RESOLUTION,
+          y: 1.0 / config.SIM_RESOLUTION,
+        };
 
-        // --- Fonction de réinitialisation et de démarrage ---
-        function restartSimulation() {
-          if (animationFrameId) {
-            cancelAnimationFrame(animationFrameId);
-          }
+        // Création des textures et Framebuffers (FBOs) pour la simulation
+        // On utilise une technique de "ping-pong" avec deux textures/FBOs pour chaque champ
+        let velocity = createDoubleFBO(
+          gl,
+          config.SIM_RESOLUTION,
+          config.SIM_RESOLUTION,
+          null
+        );
+        let temperature = createDoubleFBO(
+          gl,
+          config.SIM_RESOLUTION,
+          config.SIM_RESOLUTION,
+          getInitialTemperature()
+        );
+        let pressure = createDoubleFBO(
+          gl,
+          config.SIM_RESOLUTION,
+          config.SIM_RESOLUTION,
+          null
+        );
+        const divergence = createFBO(
+          gl,
+          config.SIM_RESOLUTION,
+          config.SIM_RESOLUTION,
+          null
+        );
 
-          config.SIM_RESOLUTION_X = parseInt(widthSlider.value);
-          config.SIM_RESOLUTION_Y = parseInt(heightSlider.value);
-
-          canvas.width = config.SIM_RESOLUTION_X;
-          canvas.height = config.SIM_RESOLUTION_Y;
-          canvas.style.aspectRatio = `${canvas.width} / ${canvas.height}`;
-
-          texelSize = {
-            x: 1.0 / config.SIM_RESOLUTION_X,
-            y: 1.0 / config.SIM_RESOLUTION_Y,
-          };
-
-          velocity = createDoubleFBO(
-            gl,
-            config.SIM_RESOLUTION_X,
-            config.SIM_RESOLUTION_Y,
-            null
+        function getInitialTemperature() {
+          // Créer un tableau Float32Array pour les données de température
+          // Chaque texel aura 4 composants (RGBA), mais seule la composante R est utilisée pour la température.
+          const data = new Float32Array(
+            config.SIM_RESOLUTION * config.SIM_RESOLUTION * 4
           );
-          temperature = createDoubleFBO(
-            gl,
-            config.SIM_RESOLUTION_X,
-            config.SIM_RESOLUTION_Y,
-            getInitialTemperature(
-              config.SIM_RESOLUTION_X,
-              config.SIM_RESOLUTION_Y
-            )
-          );
-          pressure = createDoubleFBO(
-            gl,
-            config.SIM_RESOLUTION_X,
-            config.SIM_RESOLUTION_Y,
-            null
-          );
-          divergence = createFBO(
-            gl,
-            config.SIM_RESOLUTION_X,
-            config.SIM_RESOLUTION_Y,
-            null
-          );
-
-          // Lancement de la boucle de simulation
-          update();
-        }
-
-        function getInitialTemperature(width, height) {
-          const data = new Float32Array(width * height * 4);
           const avgTemp =
             (config.INITIAL_TEMP_BOTTOM + config.INITIAL_TEMP_TOP) / 2.0;
 
-          for (let j = 0; j < height; j++) {
-            for (let i = 0; i < width; i++) {
-              const index = (j * width + i) * 4;
+          for (let j = 0; j < config.SIM_RESOLUTION; j++) {
+            for (let i = 0; i < config.SIM_RESOLUTION; i++) {
+              const index = (j * config.SIM_RESOLUTION + i) * 4;
               let temp;
 
+              // --- Conditions aux limites (les "plaques") ---
               if (j === 0) {
-                // Bordure du bas : chaude et constante
+                // Bordure du bas : toujours chaude
                 temp = config.INITIAL_TEMP_BOTTOM;
-              } else if (j === height - 1) {
-                // Bordure du haut : froide
+              } else if (j === config.SIM_RESOLUTION - 1) {
+                // Bordure du haut : toujours froide
                 temp = config.INITIAL_TEMP_TOP;
               } else {
-                // Intérieur : température moyenne avec bruit
-                const noise = (Math.random() - 0.5) * 0.01;
+                // --- Condition initiale du fluide à l'intérieur ---
+                // Température moyenne homogène avec un bruit aléatoire pour briser la symétrie.
+                // Ce bruit est crucial pour que les instabilités se développent et forment les cellules de convection.
+                const noise = (Math.random() - 0.5) * 0.01; // Bruit pour perturber l'équilibre
                 temp = avgTemp + noise;
               }
 
-              data[index] = temp;
-              data[index + 1] = 0.0;
-              data[index + 2] = 0.0;
-              data[index + 3] = 1.0;
+              data[index] = temp; // R (contient la température)
+              data[index + 1] = 0.0; // G (non utilisé)
+              data[index + 2] = 0.0; // B (non utilisé)
+              data[index + 3] = 1.0; // A (alpha, toujours 1.0)
             }
           }
           return data;
         }
 
         function update() {
-          gl.viewport(0, 0, config.SIM_RESOLUTION_X, config.SIM_RESOLUTION_Y);
+          // Le viewport pour le rendu interne (sur les FBOs) est toujours à la résolution de la simulation
+          gl.viewport(0, 0, config.SIM_RESOLUTION, config.SIM_RESOLUTION);
 
           // --- Étape 1: Advection de la vitesse ---
+          // Déplace le champ de vitesse actuel en fonction de lui-même (auto-advection).
           gl.useProgram(advectionProgram);
           gl.uniform2f(
             gl.getUniformLocation(advectionProgram, "u_texelSize"),
@@ -680,10 +621,9 @@
             gl.getUniformLocation(advectionProgram, "u_dt"),
             config.DT
           );
-          gl.uniform2f(
+          gl.uniform1f(
             gl.getUniformLocation(advectionProgram, "u_simResolution"),
-            config.SIM_RESOLUTION_X,
-            config.SIM_RESOLUTION_Y
+            config.SIM_RESOLUTION
           );
           gl.uniform1i(
             gl.getUniformLocation(advectionProgram, "u_velocity"),
@@ -882,11 +822,11 @@
 
           gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-          animationFrameId = requestAnimationFrame(update);
+          requestAnimationFrame(update);
         }
 
         // Lancement de la boucle de simulation
-        restartSimulation();
+        update();
 
         // Ajout des écouteurs d'événements pour les boutons de visualisation
         document.getElementById("showTempBtn").addEventListener("click", () => {
